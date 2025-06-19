@@ -1,19 +1,28 @@
+// backend/src/controllers/configEmpresaController.js
 const { pool } = require('../config/db');
 
 // Obter configurações da empresa (acessível publicamente via slug)
 const getConfigBySlug = async (req, res, next) => {
-  const empresaId = req.empresa_id; // Vem do middleware extractEmpresaId
+  const empresaId = req.empresa_id;
 
   try {
-    const [rows] = await pool.query(`SELECT
+    const [rows] = await pool.query(
+      `SELECT
           e.id, e.nome_fantasia, e.razao_social, e.cnpj, e.slug, e.email_contato, e.telefone_contato,
           e.endereco, e.cidade, e.estado, e.cep, e.observacoes, e.status, e.valor_mensalidade,
           e.data_vencimento_mensalidade, e.data_cadastro, e.data_atualizacao,
           ce.logo_url, ce.horario_funcionamento, ce.numero_mesas, ce.taxa_entrega,
-          ce.tempo_medio_preparo, ce.config_impressora
+          ce.tempo_medio_preparo, ce.config_impressora,
+          ce.permitir_pedido_online, ce.pedido_minimo_delivery, ce.desativar_entrega,
+          ce.desativar_retirada, ce.tempo_corte_pedido_online, ce.mensagem_confirmacao_pedido,
+          ce.auto_aprovar_pedidos, ce.cor_primaria_cardapio, ce.mostrar_promocoes_na_home,
+          ce.layout_cardapio, ce.alerta_estoque_baixo_ativo, ce.limite_estoque_baixo,
+          ce.enviar_email_confirmacao
        FROM empresas e
        LEFT JOIN config_empresa ce ON e.id = ce.empresa_id
-       WHERE e.id = ?`, [empresaId]);
+       WHERE e.id = ?`,
+      [empresaId]
+    );
 
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Configurações da empresa não encontradas.' });
@@ -27,16 +36,42 @@ const getConfigBySlug = async (req, res, next) => {
 
 // Atualizar configurações da empresa (Proprietário ou Gerente da empresa)
 const updateConfig = async (req, res, next) => {
-  const empresaId = req.empresa_id; // Vem do middleware extractEmpresaId
-  const { logo_url, horario_funcionamento, numero_mesas, taxa_entrega, tempo_medio_preparo, config_impressora } = req.body;
+  const empresaId = req.empresa_id;
+  const { 
+    horario_funcionamento, numero_mesas, taxa_entrega, tempo_medio_preparo, config_impressora,
+    permitir_pedido_online, pedido_minimo_delivery, desativar_entrega,
+    desativar_retirada, tempo_corte_pedido_online, mensagem_confirmacao_pedido,
+    auto_aprovar_pedidos, cor_primaria_cardapio, mostrar_promocoes_na_home,
+    layout_cardapio, alerta_estoque_baixo_ativo, limite_estoque_baixo,
+    enviar_email_confirmacao
+  } = req.body;
+  const requestingUserRole = req.user.role;
+
+  if (requestingUserRole !== 'Proprietario' && requestingUserRole !== 'Gerente') {
+    return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para atualizar configurações.' });
+  }
 
   try {
     const [result] = await pool.query(
       `UPDATE config_empresa SET
-        logo_url = ?, horario_funcionamento = ?, numero_mesas = ?,
-        taxa_entrega = ?, tempo_medio_preparo = ?, config_impressora = ?
+        horario_funcionamento = ?, numero_mesas = ?, taxa_entrega = ?,
+        tempo_medio_preparo = ?, config_impressora = ?,
+        permitir_pedido_online = ?, pedido_minimo_delivery = ?, desativar_entrega = ?,
+        desativar_retirada = ?, tempo_corte_pedido_online = ?, mensagem_confirmacao_pedido = ?,
+        auto_aprovar_pedidos = ?, cor_primaria_cardapio = ?, mostrar_promocoes_na_home = ?,
+        layout_cardapio = ?, alerta_estoque_baixo_ativo = ?, limite_estoque_baixo = ?,
+        enviar_email_confirmacao = ?
        WHERE empresa_id = ?`,
-      [logo_url, horario_funcionamento, numero_mesas, taxa_entrega, tempo_medio_preparo, config_impressora, empresaId]
+      [
+        horario_funcionamento, parseInt(numero_mesas) || 0, parseFloat(taxa_entrega) || 0.00, // <--- GARANTE FLOAT AQUI
+        tempo_medio_preparo, config_impressora,
+        permitir_pedido_online, parseFloat(pedido_minimo_delivery) || 0.00, desativar_entrega,
+        desativar_retirada, tempo_corte_pedido_online, mensagem_confirmacao_pedido,
+        auto_aprovar_pedidos, cor_primaria_cardapio, mostrar_promocoes_na_home,
+        layout_cardapio, alerta_estoque_baixo_ativo, parseInt(limite_estoque_baixo) || 0,
+        enviar_email_confirmacao,
+        empresaId
+      ]
     );
 
     if (result.affectedRows === 0) {
@@ -49,16 +84,18 @@ const updateConfig = async (req, res, next) => {
   }
 };
 
-// Nova função para upload de logo
 const uploadLogo = async (req, res, next) => {
-  const empresaId = req.empresa_id; // Vem do middleware extractEmpresaId
+  const empresaId = req.empresa_id;
+  const requestingUserRole = req.user.role;
 
   if (!req.file) {
     return res.status(400).json({ message: 'Nenhum arquivo de logo foi enviado.' });
   }
 
-  // O caminho do arquivo será relativo à pasta 'public'
-  // Ex: /uploads/logos/logo-1678888888.png
+  if (requestingUserRole !== 'Proprietario' && requestingUserRole !== 'Gerente') {
+    return res.status(403).json({ message: 'Acesso negado. Apenas o Proprietário ou Gerente pode fazer upload de logo.' });
+  }
+
   const logoUrl = `/uploads/logos/${req.file.filename}`;
 
   try {
@@ -68,8 +105,6 @@ const uploadLogo = async (req, res, next) => {
     );
 
     if (result.affectedRows === 0) {
-      // Se a config_empresa não existir, podemos criá-la aqui
-      // No entanto, já estamos criando no `createEmpresa`, então este caso é mais para erro
       return res.status(404).json({ message: 'Configurações da empresa não encontradas para atualizar o logo.' });
     }
 
@@ -85,5 +120,5 @@ const uploadLogo = async (req, res, next) => {
 module.exports = {
   getConfigBySlug,
   updateConfig,
-  uploadLogo // Exporta a nova função
+  uploadLogo
 };

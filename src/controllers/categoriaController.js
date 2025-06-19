@@ -1,5 +1,6 @@
 // backend/src/controllers/categoriaController.js
 const { pool } = require('../config/db');
+const { get } = require('../routes/configEmpresaRoutes');
 
 // 1. Criar uma nova categoria
 const createCategoria = async (req, res, next) => {
@@ -132,11 +133,31 @@ const deleteCategoria = async (req, res, next) => {
     next(error);
   }
 };
+const getPublicCategoriasByEmpresa = async (req, res, next) => {
+  const empresaId = req.empresa_id; // Vem do middleware extractEmpresaId
+
+  if (!empresaId) {
+    return res.status(500).json({ message: 'Erro interno: ID da empresa não encontrado na requisição.' });
+  }
+
+  // Não há verificação de role aqui, pois é uma rota pública.
+  // Apenas categorias ativas devem ser retornadas.
+  try {
+    const [categorias] = await pool.query(
+      'SELECT id, descricao, ativo FROM categorias WHERE empresa_id = ? AND ativo = TRUE ORDER BY descricao',
+      [empresaId]
+    );
+    res.status(200).json(categorias);
+  } catch (error) {
+    next(error);
+  }
+};
 
 module.exports = {
   createCategoria,
   getAllCategoriasByEmpresa,
   getCategoriaById,
   updateCategoria,
-  deleteCategoria
+  deleteCategoria,
+  getPublicCategoriasByEmpresa
 };

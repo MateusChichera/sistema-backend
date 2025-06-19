@@ -1,17 +1,36 @@
+// backend/src/config/multerConfig.js
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs'); // Importa o módulo 'fs' para criar diretórios
+
+// Garante que os diretórios de upload existam
+const ensureDirExists = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
 
 // Configuração de armazenamento para o Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Define o diretório de destino dos arquivos.
-    // __dirname aponta para 'backend/src/config', então precisamos voltar duas pastas
-    // para chegar na raiz 'backend' e então ir para 'public/uploads/logos'.
-    cb(null, path.join(__dirname, '../../public/uploads/logos'));
+    let uploadPath;
+    // Define o diretório de destino baseado no tipo de arquivo (fieldname)
+    if (file.fieldname === 'logo') {
+      uploadPath = path.join(__dirname, '../../public/uploads/logos');
+    } else if (file.fieldname === 'foto_produto') { // Novo destino para produtos
+      uploadPath = path.join(__dirname, '../../public/uploads/produtos');
+    } else {
+      uploadPath = path.join(__dirname, '../../public/uploads/temp'); // Fallback
+    }
+
+    ensureDirExists(uploadPath); // Garante que a pasta exista
+    cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
     // Define o nome do arquivo, evitando colisões com um timestamp e mantendo a extensão original.
-    cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
+    // Ex: logo-1678888888.png ou produto-123456789.jpg
+    const namePrefix = file.fieldname.includes('logo') ? 'logo' : 'produto';
+    cb(null, `${namePrefix}-${Date.now()}${path.extname(file.originalname)}`);
   }
 });
 
