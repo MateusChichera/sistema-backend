@@ -32,6 +32,7 @@ router.get(
 
 // Obter detalhes de um pedido específico
 // GET /api/v1/gerencial/:slug/pedidos/:id
+
 router.get(
   '/gerencial/:slug/pedidos/:id',
   extractEmpresaId,
