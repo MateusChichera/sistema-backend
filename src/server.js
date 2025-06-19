@@ -21,6 +21,7 @@ const produtoRoutes = require('./routes/produtoRoutes');
 const pedidoRoutes = require('./routes/pedidoRoutes');
 const cardapioPublicRoutes = require('./routes/cardapioPublicRoutes');
 const mesasRoutes = require('./routes/mesaRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 
 dotenv.config();
 
@@ -29,7 +30,7 @@ const server = http.createServer(app); // Cria um servidor HTTP a partir do app 
 const io = new Server(server, { // Anexa o Socket.IO ao servidor HTTP
   cors: {
     origin: process.env.FRONTEND_URL,
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
   }
@@ -40,7 +41,7 @@ const port = process.env.PORT || 3001;
 // Middlewares
 app.use(cors({
   origin: process.env.FRONTEND_URL,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE','PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true // Importante para cookies/auth
 }));
@@ -72,6 +73,7 @@ app.use('/api/v1', produtoRoutes);
 app.use('/api/v1', pedidoRoutes);
 app.use('/api/v1', cardapioPublicRoutes);
 app.use('/api/v1', mesasRoutes);
+app.use('/api/v1', dashboardRoutes);
 
 app.use('/api/v1', testRoutes);
 
