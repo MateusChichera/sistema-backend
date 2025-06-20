@@ -1,21 +1,18 @@
 // backend/src/controllers/pedidoController.js
 const { pool } = require('../config/db');
 const { sendOrderConfirmationEmail } = require('../services/emailService');
+//const { io } = require('../utils/socket'); // Certifique-se de que `io` está configurado e exportado corretamente
 
 // NOVO: Função para gerar número de pedido menor (até 4 dígitos)
 const generateNumeroPedido = async (empresaId) => {
     const [result] = await pool.query('SELECT COUNT(*) as count FROM pedidos WHERE empresa_id = ? AND DATE(data_pedido) = CURDATE()', [empresaId]);
     const countToday = result[0].count;
-    // Pega os últimos 3 dígitos do timestamp para ser único, ou um ID sequencial diário
-    // Para um número menor, vamos usar um contador diário e um sufixo aleatório pequeno
-    const randomNumber = Math.floor(100 + Math.random() * 900); // 3 dígitos
-    const dayCounter = String(countToday + 1).padStart(2, '0'); // Contador do dia
+    const randomNumber = Math.floor(100 + Math.random() * 900); // 3 dígitos aleatórios
+    const dayCounter = String(countToday + 1).padStart(2, '0'); // Contador diário
     return `${dayCounter}${randomNumber}`; // Ex: "01345", "02876"
 };
 
-
 // Função auxiliar para buscar pedido COMPLETO (com itens e pagamentos)
-// Será usada por todas as rotas que precisam retornar um pedido completo
 const getFullPedidoDetails = async (connection, pedidoId, empresaId) => {
     const [pedidosRows] = await connection.query(
         `SELECT 
@@ -24,7 +21,7 @@ const getFullPedidoDetails = async (connection, pedidoId, empresaId) => {
             p.nome_cliente_convidado, p.tipo_entrega, p.status, p.valor_total, p.valor_recebido_parcial, p.observacoes, 
             p.data_pedido, p.data_atualizacao,
             f.nome AS nome_funcionario, f.email AS email_funcionario,
-            c.endereco AS endereco_entrega
+            p.endereco_entrega, p.complemento_entrega, p.numero_entrega, p.bairro_entrega, p.cidade_entrega, p.estado_entrega, p.cep_entrega
         FROM pedidos p
         LEFT JOIN mesas m ON p.id_mesa = m.id
         LEFT JOIN clientes c ON p.id_cliente = c.id
@@ -254,7 +251,7 @@ const getAllPedidosByEmpresa = async (req, res, next) => {
             p.nome_cliente_convidado, p.tipo_entrega, p.status, p.valor_total, p.valor_recebido_parcial, p.observacoes, 
             p.data_pedido, p.data_atualizacao,
             f.nome as nome_funcionario, f.email as email_funcionario,
-            c.endereco AS endereco_entrega
+            p.endereco_entrega, p.complemento_entrega, p.numero_entrega, p.bairro_entrega, p.cidade_entrega, p.estado_entrega, p.cep_entrega
         FROM pedidos p
         LEFT JOIN mesas m ON p.id_mesa = m.id
         LEFT JOIN clientes c ON p.id_cliente = c.id
@@ -284,20 +281,24 @@ const getAllPedidosByEmpresa = async (req, res, next) => {
         queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    query += ` ORDER BY p.data_pedido ASC`; // Ordena do mais antigo para o mais recente
+    query += ` ORDER BY p.data_pedido DESC`; // Ordena do mais recente para o mais antigo (para o caixa)
 
-    const connection = await pool.getConnection(); // Adicionado para getAllPedidosByEmpresa
+    const connection = await pool.getConnection();
     try {
         const [pedidosBase] = await connection.query(query, queryParams);
 
         // PONTO CRÍTICO: Buscar itens e pagamentos para CADA pedido
         const pedidosCompletos = await Promise.all(pedidosBase.map(async (pedido) => {
-            // Reutiliza a conexão do pool para buscar os detalhes
-            const fullPedido = await getFullPedidoDetails(connection, pedido.id, empresaId);
-            return fullPedido;
+            const connectionForDetail = await pool.getConnection(); // Obtém nova conexão para cada promessa
+            try {
+                const fullPedido = await getFullPedidoDetails(connectionForDetail, pedido.id, empresaId);
+                return fullPedido;
+            } finally {
+                connectionForDetail.release();
+            }
         }));
 
-        res.status(200).json(pedidosCompletos);
+        res.status(200).json(pedidosCompletos.filter(Boolean)); // Filtra por null se algum pedido não foi encontrado
     } catch (error) {
         next(error);
     } finally {
@@ -533,35 +534,28 @@ const finalizePedidoAndRegisterPayment = async (req, res, next) => {
             return res.status(400).json({ message: `Este pedido já está com status '${pedido.status}'.` });
         }
 
-        // Calcular o subtotal dos itens que estão sendo cobrados NESTA PARCELA
-        const [itensPedidoCompleto] = await connection.query('SELECT id, quantidade, preco_unitario FROM itens_pedido WHERE id_pedido = ?', [pedidoId]);
-        
-        let subtotalItensCobradosNestaParcela = 0;
-        itensPedidoCompleto.forEach(item => {
-            if (itens_cobrados_ids.includes(item.id)) {
-                subtotalItensCobradosNestaParcela += parseFloat(item.quantidade) * parseFloat(item.preco_unitario);
-            }
-        });
+        // Buscar a forma de pagamento para aplicar o desconto
+        const [formaPagamentoRows] = await connection.query('SELECT porcentagem_desconto_geral FROM formas_pagamento WHERE id = ?', [forma_pagamento_id]);
+        const porcentagemDesconto = formaPagamentoRows.length > 0 ? parseFloat(formaPagamentoRows[0].porcentagem_desconto_geral) : 0;
 
-        // Este valor pode não ser usado para atualização de saldo se o `valor_pago` for o foco
-        // let valorFinalCobradoNestaParcela = subtotalItensCobradosNestaParcela;
-        // if (dividir_conta_qtd_pessoas && dividir_conta_qtd_pessoas > 1) {
-        //     valorFinalCobradoNestaParcela = subtotalItensCobradosNestaParcela / dividir_conta_qtd_pessoas;
-        // }
-        
+        let valorTotalPedidoComDesconto = parseFloat(pedido.valor_total);
+        if (porcentagemDesconto > 0) {
+            valorTotalPedidoComDesconto *= (1 - (porcentagemDesconto / 100));
+        }
+
         // 2. Registrar o pagamento na tabela `pagamentos`
         await connection.query(
             `INSERT INTO pagamentos (empresa_id, id_pedido, id_forma_pagamento, valor_pago, observacoes) VALUES (?, ?, ?, ?, ?)`,
-            [empresaId, pedidoId, forma_pagamento_id, parseFloat(valor_pago), observacoes_pagamento || null] // valor_pago é o valor REAL RECEBIDO
+            [empresaId, pedidoId, forma_pagamento_id, parseFloat(valor_pago), observacoes_pagamento || null]
         );
 
         // 3. ATUALIZAR o valor_recebido_parcial do pedido
         const novoValorRecebidoParcial = parseFloat(pedido.valor_recebido_parcial) + parseFloat(valor_pago);
         await connection.query(`UPDATE pedidos SET valor_recebido_parcial = ?, data_atualizacao = CURRENT_TIMESTAMP WHERE id = ? AND empresa_id = ?`, [novoValorRecebidoParcial, pedidoId, empresaId]);
 
-        // 4. Se o valor recebido parcial agora é >= valor_total, mude o status para 'Entregue'
+        // 4. Se o valor recebido parcial agora é >= valor_total_COM_DESCONTO, mude o status para 'Entregue'
         let novoStatus = pedido.status;
-        if (novoValorRecebidoParcial >= parseFloat(pedido.valor_total)) {
+        if (novoValorRecebidoParcial >= valorTotalPedidoComDesconto) { // AQUI A VALIDAÇÃO CRÍTICA COM DESCONTO
             novoStatus = 'Entregue';
             await connection.query(`UPDATE pedidos SET status = ?, data_atualizacao = CURRENT_TIMESTAMP WHERE id = ? AND empresa_id = ?`, [novoStatus, pedidoId, empresaId]);
             
@@ -579,14 +573,13 @@ const finalizePedidoAndRegisterPayment = async (req, res, next) => {
         const updatedPedido = await getFullPedidoDetails(connection, pedidoId, empresaId);
 
         io.to(`company_${empresaId}`).emit('orderUpdated', updatedPedido); 
-        if (novoValorRecebidoParcial >= parseFloat(pedido.valor_total)) { // Se o pedido foi finalizado agora (pago totalmente)
+        if (novoStatus === 'Entregue' || novoStatus === 'Cancelado') { // Se o pedido foi finalizado ou cancelado agora
             io.to(`company_${empresaId}`).emit('orderFinalized', { id: pedidoId, numero_pedido: updatedPedido.numero_pedido });
         }
 
 
         res.status(200).json({ 
             message: 'Pagamento registrado com sucesso!',
-            // valor_cobrado: valorFinalCobradoNestaParcela, // Se necessário enviar este valor de volta
             valor_recebido_total_no_pedido: novoValorRecebidoParcial, 
             novo_status_pedido: novoStatus
         });
