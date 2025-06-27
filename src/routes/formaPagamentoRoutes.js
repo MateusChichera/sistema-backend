@@ -53,4 +53,12 @@ router.delete(
   formaPagamentoController.deleteFormaPagamento
 );
 
+
+router.get(
+    '/:slug/formas-pagamento', // Rota sem '/gerencial'
+    extractEmpresaId,         // Continua usando para identificar a empresa
+    // Sem authenticateToken e authorizeRole, tornando-a pública
+    formaPagamentoController.getAllFormasPagamentoByEmpresaP// Reutiliza o mesmo controller
+);
+
 module.exports = router;

@@ -10,8 +10,8 @@ const extractEmpresaId = async (req, res, next) => {
   const { slug } = req.params; // Pega o slug do parâmetro da URL
 
   // --- LOGS DE DEPURAÇÃO PARA O BACK-END ---
-  console.log('Backend Middleware: extractEmpresaId - Início');
-  console.log('Backend Middleware: Slug recebido em req.params:', slug);
+  //console.log('Backend Middleware: extractEmpresaId - Início');
+ // console.log('Backend Middleware: Slug recebido em req.params:', slug);
 
   if (!slug) {
     console.log('Backend Middleware: Slug é nulo ou vazio. Retornando 400.');
@@ -24,7 +24,7 @@ const extractEmpresaId = async (req, res, next) => {
     // contra espaços em branco e diferenças de maiúsculas/minúsculas.
     const [rows] = await pool.query('SELECT id, status FROM empresas WHERE slug = ?', [slug.toLowerCase().trim()]);
 
-    console.log('Backend Middleware: Resultado da consulta SQL para slug:', slug, '->', rows);
+   // console.log('Backend Middleware: Resultado da consulta SQL para slug:', slug, '->', rows);
 
     if (rows.length === 0) {
       console.log('Backend Middleware: Empresa não encontrada para o slug:', slug);
@@ -35,17 +35,17 @@ const extractEmpresaId = async (req, res, next) => {
 
     // Verifica se a empresa está ativa
     if (empresa.status !== 'Ativa') {
-      console.log('Backend Middleware: Empresa encontrada, mas não está ativa. Status:', empresa.status);
+     // console.log('Backend Middleware: Empresa encontrada, mas não está ativa. Status:', empresa.status);
       return res.status(403).json({ message: 'Acesso negado. Esta empresa não está ativa.' });
     }
 
     // Se tudo ok, adiciona o empresa_id ao objeto de requisição
     req.empresa_id = empresa.id;
-    console.log('Backend Middleware: Empresa ID adicionado ao req.empresa_id:', empresa.id);
+   // console.log('Backend Middleware: Empresa ID adicionado ao req.empresa_id:', empresa.id);
     next(); // Continua para a próxima função middleware/rota
 
   } catch (error) {
-    console.error('Backend Middleware: Erro no extractEmpresaId:', error);
+    //console.error('Backend Middleware: Erro no extractEmpresaId:', error);
     next(error); // Passa o erro para o errorHandler
   }
 };

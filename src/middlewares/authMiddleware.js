@@ -1,4 +1,8 @@
-const { verifyToken } = require('../utils/authUtils');
+// Crie um novo arquivo ou adicione no seu 'authMiddleware.js'
+const jwt = require('jsonwebtoken'); // Certifique-se de que jwt está importado, se verifyToken usar internamente
+
+// Supondo que verifyToken está em '../utils/authUtils'
+const { verifyToken } = require('../utils/authUtils'); 
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -10,20 +14,46 @@ const authenticateToken = (req, res, next) => {
 
   try {
     const decoded = verifyToken(token);
-    req.user = decoded; // Adiciona o payload decodificado ao req.user
+    req.user = decoded;
 
-    // Para usuários que não são admin_geral, verifica se o empresa_id do token
-    // corresponde ao empresa_id extraído do slug na URL (se existir).
-    // Isso é uma camada extra de segurança para rotas multi-tenant.
     if (req.user.role !== 'admin_geral' && req.empresa_id) {
       if (req.user.empresa_id !== req.empresa_id) {
         return res.status(403).json({ message: 'Acesso negado. Token não pertence a esta empresa.' });
       }
     }
-
     next();
   } catch (error) {
-    // Pode ser TokenExpiredError, JsonWebTokenError, etc.
+    return res.status(403).json({ message: error.message });
+  }
+};
+
+// --- NOVO MIDDLEWARE PARA AUTENTICAÇÃO OPCIONAL ---
+const authenticateOptional = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token == null) {
+    // Se não há token, simplesmente define req.user como null
+    // e permite que a requisição prossiga.
+    req.user = null; 
+    return next(); 
+  }
+
+  // Se há um token, tenta verificar e decodificar como de costume
+  try {
+    const decoded = verifyToken(token);
+    req.user = decoded;
+
+    if (req.user.role !== 'admin_geral' && req.empresa_id) {
+      if (req.user.empresa_id !== req.empresa_id) {
+        // Se o token existe, mas não é válido para a empresa, ainda é um erro 403
+        return res.status(403).json({ message: 'Acesso negado. Token não pertence a esta empresa.' });
+      }
+    }
+    next();
+  } catch (error) {
+    // Se o token existe, mas é inválido (expirado, malformado, etc.), 
+    // ele deve ser tratado como um erro 403.
     return res.status(403).json({ message: error.message });
   }
 };
@@ -48,5 +78,6 @@ const authorizeRole = (allowedRoles) => {
 
 module.exports = {
   authenticateToken,
-  authorizeRole
+  authorizeRole,
+  authenticateOptional // Exporte o novo middleware
 };

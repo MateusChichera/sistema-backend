@@ -162,9 +162,46 @@ const deleteFormaPagamento = async (req, res, next) => {
   }
 };
 
+const getAllFormasPagamentoByEmpresaP = async (req, res) => {
+    const { empresa_id } = req; // Obtido do middleware extractEmpresaId
+    const { status } = req.query; // Para filtros futuros, se houver
+    
+    const isAuthenticatedRequest = !!req.user; 
+
+    let query = 'SELECT * FROM formas_pagamento WHERE empresa_id = ?';
+    const params = [empresa_id];
+
+    if (isAuthenticatedRequest) {
+        // Se a requisição é autenticada (gerencial), permite filtrar por status, etc.
+        // E só permite ver formas ativas se o funcionário não for proprietário/gerente
+        const requestingUserRole = req.user.role; // Agora é seguro acessar req.user.role
+        if (status) {
+            query += ' AND status = ?';
+            params.push(status);
+        }
+        // Se não for Proprietário ou Gerente, só pode ver formas ativas
+        if (!['Proprietario', 'Gerente'].includes(requestingUserRole)) {
+            query += ' AND ativo = 1';
+        }
+    } else {
+        // Se a requisição NÃO é autenticada (pública),
+        // SÓ PODE ver formas de pagamento que estão ativas E marcadas para pedido online.
+        query += ' AND ativo = 1';
+    }
+
+    try {
+        const [rows] = await pool.query(query, params);
+        res.json(rows);
+    } catch (err) {
+        console.error("Erro ao buscar formas de pagamento:", err);
+        res.status(500).json({ message: 'Erro ao buscar formas de pagamento.' });
+    }
+};
+
 module.exports = {
   createFormaPagamento,
   getAllFormasPagamentoByEmpresa,
+  getAllFormasPagamentoByEmpresaP,
   getFormaPagamentoById,
   updateFormaPagamento,
   deleteFormaPagamento

@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const pedidoController = require('../controllers/pedidoController');
-const { authenticateToken, authorizeRole } = require('../middlewares/authMiddleware');
+const { authenticateToken, authorizeRole,authenticateOptional } = require('../middlewares/authMiddleware');
 const { extractEmpresaId } = require('../middlewares/empresaMiddleware');
 
 // Rotas para gerenciamento de Pedidos
@@ -12,11 +12,7 @@ const { extractEmpresaId } = require('../middlewares/empresaMiddleware');
 router.post(
   '/:slug/pedidos',
   extractEmpresaId, // Para pegar o empresa_id
-  // Não requer autenticação para clientes públicos, mas garçom seria autenticado
-  // A lógica de autenticação do cliente (se logado) e do garçom é tratada dentro do controller.
-  // Para clientes não logados, user será null.
-  // Para garçom, user será seu objeto de token.
-  (req, res, next) => authenticateToken(req, res, () => next()), // Autentica se token existe, senão next()
+  authenticateOptional, // <<--- USE ESTE AGORA!
   pedidoController.createPedido
 );
 

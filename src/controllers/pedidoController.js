@@ -18,7 +18,7 @@ const getFullPedidoDetails = async (connection, pedidoId, empresaId) => {
         `SELECT 
             p.id, p.numero_pedido, p.id_mesa, m.numero AS numero_mesa, 
             p.id_cliente, c.nome AS nome_cliente, c.email AS email_cliente, c.telefone AS telefone_cliente,
-            p.nome_cliente_convidado, p.tipo_entrega, p.status, p.valor_total, p.valor_recebido_parcial, p.observacoes, 
+            p.nome_cliente_convidado, p.tipo_entrega, p.status, p.valor_total, p.valor_recebido_parcial, p.observacoes,p.troco,p.formapagamento,p.taxa_entrega,
             p.data_pedido, p.data_atualizacao,
             f.nome AS nome_funcionario, f.email AS email_funcionario,
             p.endereco_entrega, p.complemento_entrega, p.numero_entrega, p.bairro_entrega, p.cidade_entrega, p.estado_entrega, p.cep_entrega
@@ -66,6 +66,9 @@ const createPedido = async (req, res, next) => {
         tipo_entrega,
         observacoes,
         itens,
+        troco,
+        formapagamento,
+        taxa_entrega,
         nome_cliente_mesa,
         endereco_entrega, complemento_entrega, numero_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega
     } = req.body;
@@ -140,11 +143,11 @@ const createPedido = async (req, res, next) => {
         const [pedidoResult] = await connection.query(
             `INSERT INTO pedidos (
                 empresa_id, numero_pedido, id_mesa, id_cliente, nome_cliente_convidado, tipo_entrega, status, observacoes, id_funcionario,
-                endereco_entrega, complemento_entrega, numero_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                endereco_entrega, complemento_entrega, numero_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega,troco,formapagamento,taxa_entrega
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?)`,
             [
                 empresaId, numeroPedido, id_mesa || null, clienteIdParaPedido || null, nomeClienteParaPedido || null, tipo_entrega, 'Pendente', observacoes || null, idFuncionarioLogado,
-                endereco_entrega || null, complemento_entrega || null, numero_entrega || null, bairro_entrega || null, cidade_entrega || null, estado_entrega || null, cep_entrega || null
+                endereco_entrega || null, complemento_entrega || null, numero_entrega || null, bairro_entrega || null, cidade_entrega || null, estado_entrega || null, cep_entrega || null , troco || 0.0 , formapagamento || null , taxa_entrega || 0.0
             ]
         );
         const pedidoId = pedidoResult.insertId;
@@ -251,7 +254,7 @@ const getAllPedidosByEmpresa = async (req, res, next) => {
             p.nome_cliente_convidado, p.tipo_entrega, p.status, p.valor_total, p.valor_recebido_parcial, p.observacoes, 
             p.data_pedido, p.data_atualizacao,
             f.nome as nome_funcionario, f.email as email_funcionario,
-            p.endereco_entrega, p.complemento_entrega, p.numero_entrega, p.bairro_entrega, p.cidade_entrega, p.estado_entrega, p.cep_entrega
+            p.endereco_entrega, p.complemento_entrega, p.numero_entrega, p.bairro_entrega, p.cidade_entrega, p.estado_entrega, p.cep_entrega,p.troco,p.formapagamento,p.taxa_entrega
         FROM pedidos p
         LEFT JOIN mesas m ON p.id_mesa = m.id
         LEFT JOIN clientes c ON p.id_cliente = c.id
@@ -557,7 +560,8 @@ const finalizePedidoAndRegisterPayment = async (req, res, next) => {
         let novoStatus = pedido.status;
         if (novoValorRecebidoParcial >= valorTotalPedidoComDesconto) { // AQUI A VALIDAÇÃO CRÍTICA COM DESCONTO
             novoStatus = 'Entregue';
-            await connection.query(`UPDATE pedidos SET status = ?, data_atualizacao = CURRENT_TIMESTAMP WHERE id = ? AND empresa_id = ?`, [novoStatus, pedidoId, empresaId]);
+            let atualizarparcial = 0.0;
+            await connection.query(`UPDATE pedidos SET status = ?, data_atualizacao = CURRENT_TIMESTAMP , valor_recebido_parcial = ?  WHERE id = ? AND empresa_id = ?`, [novoStatus,atualizarparcial, pedidoId, empresaId]);
             
             // Se o status for 'Entregue' e for um pedido de MESA, liberar a mesa
             if (pedido.id_mesa) {
