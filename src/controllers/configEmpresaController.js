@@ -17,7 +17,7 @@ const getConfigBySlug = async (req, res, next) => {
           ce.desativar_retirada, ce.tempo_corte_pedido_online, ce.mensagem_confirmacao_pedido,
           ce.auto_aprovar_pedidos, ce.cor_primaria_cardapio, ce.mostrar_promocoes_na_home,
           ce.layout_cardapio, ce.alerta_estoque_baixo_ativo, ce.limite_estoque_baixo,
-          ce.enviar_email_confirmacao
+          ce.enviar_email_confirmacao, ce.som_notificacao_cozinha, ce.som_notificacao_delivery
        FROM empresas e
        LEFT JOIN config_empresa ce ON e.id = ce.empresa_id
        WHERE e.id = ?`,
@@ -43,7 +43,7 @@ const updateConfig = async (req, res, next) => {
     desativar_retirada, tempo_corte_pedido_online, mensagem_confirmacao_pedido,
     auto_aprovar_pedidos, cor_primaria_cardapio, mostrar_promocoes_na_home,
     layout_cardapio, alerta_estoque_baixo_ativo, limite_estoque_baixo,
-    enviar_email_confirmacao
+    enviar_email_confirmacao, som_notificacao_cozinha, som_notificacao_delivery
   } = req.body;
   const requestingUserRole = req.user.role;
 
@@ -60,7 +60,7 @@ const updateConfig = async (req, res, next) => {
         desativar_retirada = ?, tempo_corte_pedido_online = ?, mensagem_confirmacao_pedido = ?,
         auto_aprovar_pedidos = ?, cor_primaria_cardapio = ?, mostrar_promocoes_na_home = ?,
         layout_cardapio = ?, alerta_estoque_baixo_ativo = ?, limite_estoque_baixo = ?,
-        enviar_email_confirmacao = ?
+        enviar_email_confirmacao = ?, som_notificacao_cozinha = ?, som_notificacao_delivery = ?
        WHERE empresa_id = ?`,
       [
         horario_funcionamento, parseInt(numero_mesas) || 0, parseFloat(taxa_entrega) || 0.00, // <--- GARANTE FLOAT AQUI
@@ -69,7 +69,7 @@ const updateConfig = async (req, res, next) => {
         desativar_retirada, tempo_corte_pedido_online, mensagem_confirmacao_pedido,
         auto_aprovar_pedidos, cor_primaria_cardapio, mostrar_promocoes_na_home,
         layout_cardapio, alerta_estoque_baixo_ativo, parseInt(limite_estoque_baixo) || 0,
-        enviar_email_confirmacao,
+        enviar_email_confirmacao, som_notificacao_cozinha, som_notificacao_delivery,
         empresaId
       ]
     );
