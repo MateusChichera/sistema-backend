@@ -21,6 +21,7 @@ const produtoRoutes = require('./routes/produtoRoutes');
 const pedidoRoutes = require('./routes/pedidoRoutes');
 const cardapioPublicRoutes = require('./routes/cardapioPublicRoutes');
 const mesasRoutes = require('./routes/mesaRoutes');
+const caixaRoutes = require('./routes/caixaRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const acessoPublicRoutes = require('./routes/acessoPublicRoutes');
 
@@ -74,6 +75,7 @@ app.use('/api/v1', produtoRoutes);
 app.use('/api/v1', pedidoRoutes);
 app.use('/api/v1', cardapioPublicRoutes);
 app.use('/api/v1', mesasRoutes);
+app.use('/api/v1', caixaRoutes);
 app.use('/api/v1', dashboardRoutes);
 app.use('/api/v1', acessoPublicRoutes);
 
