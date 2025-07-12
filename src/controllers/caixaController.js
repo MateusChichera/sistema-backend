@@ -312,6 +312,47 @@ const getCaixaAberto = async (req, res, next) => {
   }
 };
 
+// Faturamento por forma de pagamento (VIEW)
+const getFaturamentoPorFormaPagamento = async (req, res, next) => {
+  const empresaId = req.empresa_id;
+  const caixaId = req.params.id;
+  const requestingUser = req.user;
+
+  if (!['Proprietario', 'Gerente', 'Caixa'].includes(requestingUser.role)) {
+    return res.status(403).json({ message: 'Acesso negado.' });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         fp.id AS forma_pagamento_id,
+         fp.descricao AS forma_pagamento_descricao,
+         COALESCE(SUM(p.valor_pago),0) AS total_faturamento_por_forma
+       FROM formas_pagamento fp
+       LEFT JOIN pagamentos p ON p.id_forma_pagamento = fp.id
+       LEFT JOIN pedidos ped ON p.id_pedido = ped.id
+       JOIN caixas c ON p.empresa_id = c.empresas_id
+                     AND p.data_pagamento >= c.data_abertura
+                     AND (p.data_pagamento < c.data_fechamento OR c.status = 'Aberto')
+       WHERE c.id = ? AND c.empresas_id = ?
+         AND ped.status IN ('Entregue','Pronto','Finalizado')
+         AND fp.empresa_id = ?
+       GROUP BY fp.id, fp.descricao
+       ORDER BY fp.descricao`,
+      [caixaId, empresaId, empresaId]
+    );
+
+    const totalGeral = rows.reduce((acc, r) => acc + parseFloat(r.total_faturamento_por_forma || 0), 0);
+
+    return res.status(200).json({
+      total_faturamento: totalGeral,
+      detalhado_por_forma: rows
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Exportações atualizadas
 module.exports = {
   openCaixa,
@@ -319,5 +360,6 @@ module.exports = {
   closeCaixa,
   addMovimentacao,
   listMovimentacoes,
-  getCaixaAberto
+  getCaixaAberto,
+  getFaturamentoPorFormaPagamento
 }; 

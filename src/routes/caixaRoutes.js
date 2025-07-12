@@ -60,6 +60,15 @@ router.get(
   caixaController.listMovimentacoes
 );
 
+// Faturamento por forma de pagamento: GET /api/v1/gerencial/:slug/caixas/:id/faturamento-formas
+router.get(
+  '/gerencial/:slug/caixas/:id/faturamento-formas',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente', 'Caixa']),
+  caixaController.getFaturamentoPorFormaPagamento
+);
+
 // Verificar se há caixa aberto: GET /api/v1/gerencial/:slug/caixas/aberto
 router.get(
   '/gerencial/:slug/caixas/aberto',
