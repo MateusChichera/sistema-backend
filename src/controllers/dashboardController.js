@@ -69,6 +69,42 @@ const getDashboardData = async (req, res, next) => {
   }
 };
 
+// Obter relatório de Acessos x Pedidos por período (cardápio digital)
+const getRelatorioAcessosPedidos = async (req, res, next) => {
+  const empresaId = req.empresa_id; // Definido pelo middleware extractEmpresaId
+  const requestingUserRole = req.user.role;
+
+  // Validações básicas
+  if (!empresaId) {
+    return res.status(500).json({ message: 'Erro interno: ID da empresa não encontrado na requisição.' });
+  }
+
+  if (requestingUserRole !== 'Proprietario' && requestingUserRole !== 'Gerente') {
+    return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para visualizar este relatório.' });
+  }
+
+  const { startDate, endDate } = req.query;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: 'Parâmetros startDate e endDate são obrigatórios no formato YYYY-MM-DD.' });
+  }
+
+  try {
+    const [relatorio] = await pool.query(
+      `SELECT data_relatorio, total_acessos, total_pedidos, taxa_conversao_percentual
+       FROM relatorio_acessos_pedidos_diario
+       WHERE empresas_id = ? AND data_relatorio BETWEEN ? AND ?
+       ORDER BY data_relatorio ASC`,
+      [empresaId, startDate, endDate]
+    );
+
+    res.status(200).json(relatorio);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
-  getDashboardData
+  getDashboardData,
+  getRelatorioAcessosPedidos,
 };

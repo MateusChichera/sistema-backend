@@ -15,4 +15,14 @@ router.get(
   dashboardController.getDashboardData
 );
 
+// Rota para obter Relatório de Acessos x Pedidos
+// GET /api/v1/gerencial/:slug/relatorio-acessos-pedidos?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+router.get(
+  '/gerencial/:slug/relatorio-acessos-pedidos',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente']),
+  dashboardController.getRelatorioAcessosPedidos
+);
+
 module.exports = router;
