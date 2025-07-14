@@ -240,11 +240,49 @@ const getPublicProdutosByEmpresa = async (req, res, next) => {
     next(error);
   }
 };
+
+// Listar adicionais de um produto (rota pública)
+const getPublicAdicionaisByProduto = async (req, res, next) => {
+  const { id: produtoId } = req.params;
+  const empresaId = req.empresa_id;
+
+  if (!empresaId) {
+    return res.status(500).json({ message: 'Erro interno: ID da empresa não encontrado na requisição.' });
+  }
+
+  try {
+    // Verificar se o produto pertence à empresa e está ativo
+    const [produtoRows] = await pool.query(
+      'SELECT id FROM produtos WHERE id = ? AND empresa_id = ? AND ativo = TRUE',
+      [produtoId, empresaId]
+    );
+    
+    if (produtoRows.length === 0) {
+      return res.status(404).json({ message: 'Produto não encontrado ou não está disponível.' });
+    }
+
+    // Buscar adicionais vinculados ao produto
+    const [adicionais] = await pool.query(
+      `SELECT a.id, a.nome, a.descricao, a.preco
+       FROM produto_adicionais pa
+       JOIN adicionais a ON pa.id_adicional = a.id
+       WHERE pa.id_produto = ? AND pa.empresa_id = ? AND pa.ativo = 1 AND a.ativo = 1
+       ORDER BY a.nome`,
+      [produtoId, empresaId]
+    );
+    
+    res.status(200).json(adicionais);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createProduto,
   getAllProdutosByEmpresa,
   getProdutoById,
   updateProduto,
   deleteProduto,
-  getPublicProdutosByEmpresa
+  getPublicProdutosByEmpresa,
+  getPublicAdicionaisByProduto
 };

@@ -24,4 +24,12 @@ router.get(
   produtoController.getPublicProdutosByEmpresa
 );
 
+// Listar adicionais de um produto (rota pública)
+// GET /api/v1/:slug/cardapio/produtos/:id/adicionais
+router.get(
+  '/:slug/cardapio/produtos/:id/adicionais',
+  extractEmpresaId,
+  produtoController.getPublicAdicionaisByProduto
+);
+
 module.exports = router;
