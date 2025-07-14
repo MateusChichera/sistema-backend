@@ -41,6 +41,18 @@ const getFullPedidoDetails = async (connection, pedidoId, empresaId) => {
          WHERE ip.id_pedido = ?`,
         [pedido.id]
     );
+
+    // Para cada item, buscar adicionais vinculados
+    for (const item of itensPedido) {
+        const [adicionaisRows] = await connection.query(
+            `SELECT ipa.id_adicional, a.nome, ipa.quantidade, ipa.preco_unitario_adicional
+             FROM itens_pedido_adicionais ipa
+             JOIN adicionais a ON ipa.id_adicional = a.id
+             WHERE ipa.id_item_pedido = ?`,
+            [item.id]
+        );
+        item.adicionais = adicionaisRows;
+    }
     pedido.itens = itensPedido;
 
     const [pagamentosAnteriores] = await connection.query(
@@ -166,10 +178,30 @@ const createPedido = async (req, res, next) => {
             const precoUnitarioAplicado = (produtoPromoAtiva && produtoPromocao > 0) ? produtoPromocao : produtoPreco;
             valorTotal += precoUnitarioAplicado * item.quantidade;
 
-            await connection.query(
+            const [itemResult] = await connection.query(
                 `INSERT INTO itens_pedido (id_pedido, id_produto, quantidade, preco_unitario, observacoes) VALUES (?, ?, ?, ?, ?)`,
                 [pedidoId, item.id_produto, item.quantidade, precoUnitarioAplicado, item.observacoes || null]
             );
+            const itemPedidoId = itemResult.insertId;
+
+            // --- Processar adicionais (se houver) ---
+            if (item.adicionais && Array.isArray(item.adicionais) && item.adicionais.length > 0) {
+                for (const adicional of item.adicionais) {
+                    const quantidadeAdicional = adicional.quantidade ? parseInt(adicional.quantidade) : 1;
+                    const [addRows] = await connection.query('SELECT preco FROM adicionais WHERE id = ? AND empresa_id = ?', [adicional.id_adicional, empresaId]);
+                    if (addRows.length === 0) {
+                        await connection.rollback();
+                        return res.status(404).json({ message: `Adicional com ID ${adicional.id_adicional} não encontrado ou não pertence a esta empresa.` });
+                    }
+                    const precoAdicional = parseFloat(addRows[0].preco);
+                    valorTotal += precoAdicional * quantidadeAdicional;
+
+                    await connection.query(
+                        `INSERT INTO itens_pedido_adicionais (id_item_pedido, id_adicional, quantidade, preco_unitario_adicional) VALUES (?, ?, ?, ?)`,
+                        [itemPedidoId, adicional.id_adicional, quantidadeAdicional, precoAdicional]
+                    );
+                }
+            }
         }
 
         // 3. Atualizar o valor total do pedido E valor_recebido_parcial (que inicia em 0)
@@ -647,10 +679,30 @@ const addItensToExistingOrder = async (req, res, next) => {
             const precoUnitarioAplicado = (produtoPromoAtiva && produtoPromocao > 0) ? produtoPromocao : produtoPreco;
             novoValorTotalDoPedido += precoUnitarioAplicado * item.quantidade;
 
-            await connection.query(
+            const [itemResult] = await connection.query(
                 `INSERT INTO itens_pedido (id_pedido, id_produto, quantidade, preco_unitario, observacoes) VALUES (?, ?, ?, ?, ?)`,
                 [pedidoId, item.id_produto, item.quantidade, precoUnitarioAplicado, item.observacoes || null]
             );
+            const itemPedidoId = itemResult.insertId;
+
+            // Processar adicionais
+            if (item.adicionais && Array.isArray(item.adicionais) && item.adicionais.length > 0) {
+                for (const adicional of item.adicionais) {
+                    const quantidadeAdicional = adicional.quantidade ? parseInt(adicional.quantidade) : 1;
+                    const [addRows] = await connection.query('SELECT preco FROM adicionais WHERE id = ? AND empresa_id = ?', [adicional.id_adicional, empresaId]);
+                    if (addRows.length === 0) {
+                        await connection.rollback();
+                        return res.status(404).json({ message: `Adicional com ID ${adicional.id_adicional} não encontrado ou não pertence a esta empresa.` });
+                    }
+                    const precoAdicional = parseFloat(addRows[0].preco);
+                    novoValorTotalDoPedido += precoAdicional * quantidadeAdicional;
+
+                    await connection.query(
+                        `INSERT INTO itens_pedido_adicionais (id_item_pedido, id_adicional, quantidade, preco_unitario_adicional) VALUES (?, ?, ?, ?)`,
+                        [itemPedidoId, adicional.id_adicional, quantidadeAdicional, precoAdicional]
+                    );
+                }
+            }
         }
 
         await connection.query('UPDATE pedidos SET valor_total = ?, id_funcionario = ?, data_atualizacao = CURRENT_TIMESTAMP WHERE id = ?', [novoValorTotalDoPedido, idFuncionarioLogado, pedidoId]);
