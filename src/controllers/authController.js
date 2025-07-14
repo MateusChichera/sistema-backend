@@ -167,6 +167,8 @@ const clienteLogin = async (req, res, next) => {
         nome: cliente.nome,
         email: cliente.email,
         empresa_id: cliente.empresa_id,
+        telefone: cliente.telefone,
+        endereco: cliente.endereco,
         role: 'cliente'
       }
     });
