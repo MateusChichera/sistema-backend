@@ -34,8 +34,7 @@ const createEmpresa = async (req, res, next) => {
     estado,
     cep,
     valor_mensalidade,
-    segmento, // <-- Adicionado
-    // Proprietario inicial:
+    segmento,
     proprietario_nome,
     proprietario_email,
     proprietario_senha
@@ -206,10 +205,30 @@ const deleteEmpresa = async (req, res, next) => {
   }
 };
 
+// Rota pública para listar empresas ativas com dados públicos
+const getEmpresasPublicas = async (req, res, next) => {
+  try {
+    const [empresas] = await pool.query(`
+      SELECT 
+        e.id, e.nome_fantasia, e.slug, e.segmento, e.cidade, e.estado, e.endereco, e.cep,
+        e.telefone_contato,
+        ce.logo_url, ce.horario_funcionamento, ce.tempo_medio_preparo
+      FROM empresas e
+      LEFT JOIN config_empresa ce ON e.id = ce.empresa_id
+      WHERE e.status = 'Ativa'
+      ORDER BY e.nome_fantasia
+    `);
+    res.status(200).json(empresas);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createEmpresa,
   getAllEmpresas,
   getEmpresaById,
   updateEmpresa,
-  deleteEmpresa
+  deleteEmpresa,
+  getEmpresasPublicas
 };

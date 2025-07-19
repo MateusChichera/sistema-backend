@@ -21,4 +21,7 @@ router.put('/admin/empresas/:id', authenticateToken, authorizeRole('admin_geral'
 // Excluir uma empresa por ID (DELETE /api/v1/admin/empresas/:id)
 router.delete('/admin/empresas/:id', authenticateToken, authorizeRole('admin_geral'), empresaController.deleteEmpresa);
 
+// Rota pública para listar empresas ativas com dados públicos
+router.get('/empresas-publicas', empresaController.getEmpresasPublicas);
+
 module.exports = router;
