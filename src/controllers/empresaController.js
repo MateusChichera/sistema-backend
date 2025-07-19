@@ -34,6 +34,7 @@ const createEmpresa = async (req, res, next) => {
     estado,
     cep,
     valor_mensalidade,
+    segmento, // <-- Adicionado
     // Proprietario inicial:
     proprietario_nome,
     proprietario_email,
@@ -55,11 +56,11 @@ const createEmpresa = async (req, res, next) => {
     const [empresaResult] = await connection.query(
       `INSERT INTO empresas (
         nome_fantasia, razao_social, cnpj, slug, email_contato, telefone_contato,
-        endereco, cidade, estado, cep, valor_mensalidade, status, data_vencimento_mensalidade
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE() + INTERVAL 30 DAY)`, // Vencimento inicial em 30 dias
+        endereco, cidade, estado, cep, valor_mensalidade, status, data_vencimento_mensalidade, segmento
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE() + INTERVAL 30 DAY, ?)`,
       [
         nome_fantasia, razao_social, cnpj, slug, email_contato, telefone_contato,
-        endereco, cidade, estado, cep, valor_mensalidade || 99.90, 'Ativa'
+        endereco, cidade, estado, cep, valor_mensalidade || 99.90, 'Ativa', segmento || 'Restaurante'
       ]
     );
 
@@ -81,7 +82,6 @@ const createEmpresa = async (req, res, next) => {
       [empresaId]
     );
 
-
     await connection.commit(); // Confirma a transação
 
     res.status(201).json({
@@ -90,7 +90,8 @@ const createEmpresa = async (req, res, next) => {
         id: empresaId,
         nome_fantasia,
         slug,
-        email_contato
+        email_contato,
+        segmento: segmento || 'Restaurante'
       }
     });
 
@@ -115,7 +116,7 @@ const createEmpresa = async (req, res, next) => {
 // 2. Listar todas as empresas (Apenas para Admin Geral)
 const getAllEmpresas = async (req, res, next) => {
   try {
-    const [empresas] = await pool.query('SELECT id, nome_fantasia, cnpj, slug, status, valor_mensalidade, data_cadastro FROM empresas ORDER BY nome_fantasia');
+    const [empresas] = await pool.query('SELECT id, nome_fantasia, cnpj, slug, status, valor_mensalidade, data_cadastro, segmento FROM empresas ORDER BY nome_fantasia');
     res.status(200).json(empresas);
   } catch (error) {
     next(error);
@@ -154,7 +155,8 @@ const updateEmpresa = async (req, res, next) => {
     cep,
     status,
     valor_mensalidade,
-    data_vencimento_mensalidade
+    data_vencimento_mensalidade,
+    segmento // <-- Adicionado
   } = req.body;
 
   try {
@@ -162,12 +164,14 @@ const updateEmpresa = async (req, res, next) => {
       `UPDATE empresas SET
         nome_fantasia = ?, razao_social = ?, cnpj = ?, email_contato = ?,
         telefone_contato = ?, endereco = ?, cidade = ?, estado = ?, cep = ?,
-        status = ?, valor_mensalidade = ?, data_vencimento_mensalidade = ?
+        status = ?, valor_mensalidade = ?, data_vencimento_mensalidade = ?,
+        segmento = ?
        WHERE id = ?`,
       [
         nome_fantasia, razao_social, cnpj, email_contato,
         telefone_contato, endereco, cidade, estado, cep,
-        status, valor_mensalidade, data_vencimento_mensalidade, id
+        status, valor_mensalidade, data_vencimento_mensalidade,
+        segmento, id
       ]
     );
 
