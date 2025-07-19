@@ -75,4 +75,12 @@ router.delete(
   pedidoController.deletePedido
 );
 
+// Rota pública para acompanhamento de pedido por slug e id
+// GET /api/v1/:slug/pedidos/publico/:id
+router.get(
+  '/:slug/pedidos/publico/:id',
+  extractEmpresaId,
+  pedidoController.getPedidoPublico
+);
+
 module.exports = router;

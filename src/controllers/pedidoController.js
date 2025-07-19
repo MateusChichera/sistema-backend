@@ -250,6 +250,8 @@ const createPedido = async (req, res, next) => {
         const newPedidoData = await getFullPedidoDetails(connection, pedidoId, empresaId);
 
         io.to(`company_${empresaId}`).emit('newOrder', newPedidoData);
+        // Emitir também para a sala do pedido (cliente acompanha)
+        io.to(`pedido_${req.params.slug || req.body.slug}_${pedidoId}`).emit('pedidoUpdated', newPedidoData);
 
         res.status(201).json({
             message: 'Pedido criado com sucesso!',
@@ -461,6 +463,8 @@ const updatePedidoStatus = async (req, res, next) => {
         const updatedPedido = await getFullPedidoDetails(connection, id, empresaId);
 
         io.to(`company_${empresaId}`).emit('orderUpdated', updatedPedido); 
+        // Emitir também para a sala do pedido (cliente acompanha)
+        io.to(`pedido_${req.params.slug}_${id}`).emit('pedidoUpdated', updatedPedido);
 
         if (status === 'Entregue' || status === 'Cancelado') {
              io.to(`company_${empresaId}`).emit('orderFinalized', { id: id, numero_pedido: updatedPedido.numero_pedido });
@@ -739,6 +743,35 @@ const addItensToExistingOrder = async (req, res, next) => {
     }
 };
 
+// Função pública para acompanhamento do pedido
+const getPedidoPublico = async (req, res) => {
+  const { id } = req.params;
+  const empresaId = req.empresa_id;
+  const connection = await pool.getConnection();
+  try {
+    const pedido = await getFullPedidoDetails(connection, id, empresaId);
+    if (!pedido) {
+      return res.status(404).json({ mensagem: 'Pedido não encontrado' });
+    }
+    // Retornar apenas dados públicos
+    res.json({
+      id: pedido.id,
+      numero_pedido: pedido.numero_pedido,
+      status: pedido.status,
+      tipo_entrega: pedido.tipo_entrega,
+      itens: pedido.itens,
+      valor_total: pedido.valor_total,
+      taxa_entrega: pedido.taxa_entrega, // Adicionado
+      data_pedido: pedido.data_pedido,
+      data_atualizacao: pedido.data_atualizacao
+    });
+  } catch (err) {
+    res.status(500).json({ mensagem: 'Erro ao buscar pedido' });
+  } finally {
+    connection.release();
+  }
+};
+
 module.exports = {
     createPedido,
     getAllPedidosByEmpresa,
@@ -747,4 +780,5 @@ module.exports = {
     deletePedido,
     finalizePedidoAndRegisterPayment,
     addItensToExistingOrder,
+    getPedidoPublico // <-- Adicionado para exportar corretamente
 };

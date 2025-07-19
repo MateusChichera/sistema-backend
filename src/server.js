@@ -96,10 +96,20 @@ io.on('connection', (socket) => {
     console.log(`Socket.IO: Cliente desconectado: ${socket.id}`);
   });
 
-  // Você pode ter eventos de 'join room' baseados em empresa_id aqui
+  // Evento para entrar na sala da empresa
   socket.on('join_company_room', (empresaId) => {
     socket.join(`company_${empresaId}`);
     console.log(`Socket.IO: Cliente ${socket.id} entrou na sala da empresa ${empresaId}`);
+  });
+
+  // Evento para o cliente acompanhar um pedido específico
+  // Espera receber: { slug, pedidoId }
+  socket.on('join_pedido_room', ({ slug, pedidoId }) => {
+    if (slug && pedidoId) {
+      const roomName = `pedido_${slug}_${pedidoId}`;
+      socket.join(roomName);
+      console.log(`Socket.IO: Cliente ${socket.id} entrou na sala do pedido ${roomName}`);
+    }
   });
 });
 
