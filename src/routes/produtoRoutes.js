@@ -59,4 +59,7 @@ router.delete(
   produtoController.deleteProduto
 );
 
+// Listar todos os perfis tributários (pode ser usado no cadastro/edição de produtos)
+router.get('/perfis-tributarios', produtoController.getAllPerfisTributarios);
+
 module.exports = router;

@@ -224,11 +224,26 @@ const getEmpresasPublicas = async (req, res, next) => {
   }
 };
 
+// Retorna dados da empresa autenticada via integração
+const getEmpresaByIntegration = async (req, res, next) => {
+  const empresaId = req.empresa_id;
+  try {
+    const [rows] = await pool.query('SELECT * FROM empresas WHERE id = ?', [empresaId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Empresa não encontrada.' });
+    }
+    res.status(200).json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createEmpresa,
   getAllEmpresas,
   getEmpresaById,
   updateEmpresa,
   deleteEmpresa,
-  getEmpresasPublicas
+  getEmpresasPublicas,
+  getEmpresaByIntegration // Exporta a nova função
 };

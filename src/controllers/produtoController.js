@@ -5,7 +5,8 @@ const { pool } = require('../config/db');
 const createProduto = async (req, res, next) => {
   const { 
     id_categoria, nome, descricao, preco,
-    promocao, promo_ativa, ativo
+    promocao, promo_ativa, ativo,
+    ncm, perfil_tributario_id
   } = req.body;
   
   const empresaId = req.empresa_id; // Vem do middleware extractEmpresaId
@@ -30,11 +31,12 @@ const createProduto = async (req, res, next) => {
     const [result] = await pool.query(
       `INSERT INTO produtos (
         empresa_id, id_categoria, nome, descricao, preco,
-        promocao, promo_ativa, ativo, foto_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        promocao, promo_ativa, ativo, foto_url, ncm, perfil_tributario_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         empresaId, id_categoria, nome, descricao || null, preco,
-        promocao || null, promo_ativa || false, ativo !== undefined ? ativo : true, foto_url
+        promocao || null, promo_ativa || false, ativo !== undefined ? ativo : true, foto_url,
+        ncm || null, perfil_tributario_id || null
       ]
     );
     res.status(201).json({
@@ -49,7 +51,9 @@ const createProduto = async (req, res, next) => {
         promocao: promocao || null,
         promo_ativa: promo_ativa || false,
         ativo: ativo !== undefined ? ativo : true,
-        foto_url
+        foto_url,
+        ncm: ncm || null,
+        perfil_tributario_id: perfil_tributario_id || null
       }
     });
   } catch (error) {
@@ -75,7 +79,7 @@ const getAllProdutosByEmpresa = async (req, res, next) => {
     return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para visualizar produtos.' });
   }
 
-  let query = 'SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.empresa_id = ?';
+  let query = 'SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.empresa_id = ?';
   let queryParams = [empresaId];
 
   if (id_categoria) {
@@ -109,7 +113,7 @@ const getProdutoById = async (req, res, next) => {
   }
 
   try {
-    const [rows] = await pool.query('SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.id = ? AND p.empresa_id = ?', [id, empresaId]);
+    const [rows] = await pool.query('SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.id = ? AND p.empresa_id = ?', [id, empresaId]);
 
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Produto não encontrado ou não pertence a esta empresa.' });
@@ -126,7 +130,8 @@ const updateProduto = async (req, res, next) => {
   const { 
     id_categoria, nome, descricao, preco,
     promocao, promo_ativa, ativo,
-    remover_foto // Flag para remover a foto existente
+    remover_foto, // Flag para remover a foto existente
+    ncm, perfil_tributario_id
   } = req.body;
   const empresaId = req.empresa_id;
   const requestingUserRole = req.user.role;
@@ -159,6 +164,8 @@ const updateProduto = async (req, res, next) => {
   } else if (remover_foto === true) { // Se pediu para remover a foto existente
     updateFields.push('foto_url = ?'); updateValues.push(null);
   }
+  if (ncm !== undefined) { updateFields.push('ncm = ?'); updateValues.push(ncm); }
+  if (perfil_tributario_id !== undefined) { updateFields.push('perfil_tributario_id = ?'); updateValues.push(perfil_tributario_id); }
 
   if (updateFields.length === 0) {
     return res.status(400).json({ message: 'Nenhum dado para atualizar fornecido.' });
@@ -277,6 +284,16 @@ const getPublicAdicionaisByProduto = async (req, res, next) => {
   }
 };
 
+// Listar todos os perfis tributários
+const getAllPerfisTributarios = async (req, res, next) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM perfis_tributarios ORDER BY descricao');
+    res.status(200).json(rows);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createProduto,
   getAllProdutosByEmpresa,
@@ -284,5 +301,6 @@ module.exports = {
   updateProduto,
   deleteProduto,
   getPublicProdutosByEmpresa,
-  getPublicAdicionaisByProduto
+  getPublicAdicionaisByProduto,
+  getAllPerfisTributarios // Exporta a nova função
 };

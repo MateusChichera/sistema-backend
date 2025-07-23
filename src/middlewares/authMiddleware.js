@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken'); // Certifique-se de que jwt está importado
 
 // Supondo que verifyToken está em '../utils/authUtils'
 const { verifyToken } = require('../utils/authUtils'); 
+const { pool } = require('../config/db');
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -76,8 +77,37 @@ const authorizeRole = (allowedRoles) => {
   };
 };
 
+// Middleware para autenticação por integration_token
+const integrationAuth = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Token de integração não fornecido.' });
+  }
+  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ message: 'Token de integração inválido.' });
+  }
+  try {
+    const [rows] = await pool.query('SELECT * FROM funcionarios WHERE integration_token = ?', [token]);
+    if (rows.length === 0) {
+      return res.status(401).json({ message: 'Token de integração inválido.' });
+    }
+    const funcionario = rows[0];
+    if (!funcionario.ativo) {
+      return res.status(403).json({ message: 'Funcionário inativo.' });
+    }
+    req.integrationUser = funcionario;
+    req.user = funcionario; // Compatibiliza com controllers que usam req.user
+    req.empresa_id = funcionario.empresa_id;
+    next();
+  } catch (error) {
+    return res.status(500).json({ message: 'Erro ao validar token de integração.' });
+  }
+};
+
 module.exports = {
   authenticateToken,
   authorizeRole,
-  authenticateOptional // Exporte o novo middleware
+  authenticateOptional, // Exporte o novo middleware
+  integrationAuth
 };

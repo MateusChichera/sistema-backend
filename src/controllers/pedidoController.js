@@ -12,6 +12,14 @@ const generateNumeroPedido = async (empresaId) => {
     return `${dayCounter}${randomNumber}`; // Ex: "01345", "02876"
 };
 
+const formatToMySQLDateTime = (dateString) => {
+  if (!dateString) return null;
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return null;
+  // Ajusta para o fuso local, remove o 'Z' e milissegundos
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+};
+
 // Função auxiliar para buscar pedido COMPLETO (com itens e pagamentos)
 const getFullPedidoDetails = async (connection, pedidoId, empresaId) => {
     const [pedidosRows] = await connection.query(
@@ -21,7 +29,8 @@ const getFullPedidoDetails = async (connection, pedidoId, empresaId) => {
             p.nome_cliente_convidado, p.tipo_entrega, p.status, p.valor_total, p.valor_recebido_parcial, p.observacoes,p.troco,p.formapagamento,p.taxa_entrega,
             p.data_pedido, p.data_atualizacao,
             f.nome AS nome_funcionario, f.email AS email_funcionario,
-            p.endereco_entrega, p.complemento_entrega, p.numero_entrega, p.bairro_entrega, p.cidade_entrega, p.estado_entrega, p.cep_entrega
+            p.endereco_entrega, p.complemento_entrega, p.numero_entrega, p.bairro_entrega, p.cidade_entrega, p.estado_entrega, p.cep_entrega,
+            p.Nfce, p.NfceId, p.NfceEmissao, p.NfceStatus
         FROM pedidos p
         LEFT JOIN mesas m ON p.id_mesa = m.id
         LEFT JOIN clientes c ON p.id_cliente = c.id
@@ -35,14 +44,14 @@ const getFullPedidoDetails = async (connection, pedidoId, empresaId) => {
     const pedido = pedidosRows[0];
 
     const [itensPedido] = await connection.query(
-        `SELECT ip.id, ip.id_produto, pr.nome AS nome_produto, ip.quantidade, ip.preco_unitario, ip.observacoes
+        `SELECT ip.id, ip.id_produto, pr.nome AS nome_produto, ip.quantidade, ip.preco_unitario, ip.observacoes, pr.ncm, pr.perfil_tributario_id
          FROM itens_pedido ip
          JOIN produtos pr ON ip.id_produto = pr.id
          WHERE ip.id_pedido = ?`,
         [pedido.id]
     );
 
-    // Para cada item, buscar adicionais vinculados
+    // Para cada item, buscar adicionais vinculados e perfil tributário
     for (const item of itensPedido) {
         const [adicionaisRows] = await connection.query(
             `SELECT ipa.id_adicional, a.nome, ipa.quantidade, ipa.preco_unitario_adicional
@@ -52,6 +61,17 @@ const getFullPedidoDetails = async (connection, pedidoId, empresaId) => {
             [item.id]
         );
         item.adicionais = adicionaisRows;
+        // Buscar perfil tributário se houver
+        if (item.perfil_tributario_id) {
+            const [perfilRows] = await connection.query(
+                `SELECT id, descricao, cfop, csosn, origem_produto, icms_aliquota, pis_aliquota, cofins_aliquota
+                 FROM perfis_tributarios WHERE id = ?`,
+                [item.perfil_tributario_id]
+            );
+            item.perfil_tributario = perfilRows[0] || null;
+        } else {
+            item.perfil_tributario = null;
+        }
     }
     pedido.itens = itensPedido;
 
@@ -288,7 +308,8 @@ const getAllPedidosByEmpresa = async (req, res, next) => {
             p.nome_cliente_convidado, p.tipo_entrega, p.status, p.valor_total, p.valor_recebido_parcial, p.observacoes, 
             p.data_pedido, p.data_atualizacao,
             f.nome as nome_funcionario, f.email as email_funcionario,
-            p.endereco_entrega, p.complemento_entrega, p.numero_entrega, p.bairro_entrega, p.cidade_entrega, p.estado_entrega, p.cep_entrega,p.troco,p.formapagamento,p.taxa_entrega
+            p.endereco_entrega, p.complemento_entrega, p.numero_entrega, p.bairro_entrega, p.cidade_entrega, p.estado_entrega, p.cep_entrega,p.troco,p.formapagamento,p.taxa_entrega,
+            p.Nfce, p.NfceId, p.NfceEmissao, p.NfceStatus
         FROM pedidos p
         LEFT JOIN mesas m ON p.id_mesa = m.id
         LEFT JOIN clientes c ON p.id_cliente = c.id
@@ -772,6 +793,59 @@ const getPedidoPublico = async (req, res) => {
   }
 };
 
+// Atualiza campos de NFC-e de um pedido via integração
+const updateNfceByIntegration = async (req, res, next) => {
+  const empresaId = req.empresa_id;
+  const { id } = req.params;
+  let { Nfce, NfceId, NfceEmissao, NfceStatus } = req.body;
+
+  if (!empresaId) {
+    return res.status(500).json({ message: 'Erro interno: ID da empresa não encontrado na requisição.' });
+  }
+
+  // Converte NfceEmissao para formato MySQL se enviado
+  if (typeof NfceEmissao !== 'undefined' && NfceEmissao) {
+    NfceEmissao = formatToMySQLDateTime(NfceEmissao);
+  }
+
+  // Monta dinamicamente os campos a serem atualizados
+  const fields = [];
+  const values = [];
+  if (typeof Nfce !== 'undefined') {
+    fields.push('Nfce = ?');
+    values.push(Nfce);
+  }
+  if (typeof NfceId !== 'undefined') {
+    fields.push('NfceId = ?');
+    values.push(NfceId);
+  }
+  if (typeof NfceEmissao !== 'undefined') {
+    fields.push('NfceEmissao = ?');
+    values.push(NfceEmissao);
+  }
+  if (typeof NfceStatus !== 'undefined') {
+    fields.push('NfceStatus = ?');
+    values.push(NfceStatus);
+  }
+  if (fields.length === 0) {
+    return res.status(400).json({ message: 'Nenhum campo de NFC-e enviado para atualização.' });
+  }
+  values.push(id, empresaId);
+
+  try {
+    const [result] = await pool.query(
+      `UPDATE pedidos SET ${fields.join(', ')} WHERE id = ? AND empresa_id = ?`,
+      values
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Pedido não encontrado ou não pertence a esta empresa.' });
+    }
+    res.status(200).json({ message: 'Dados de NFC-e atualizados com sucesso!' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
     createPedido,
     getAllPedidosByEmpresa,
@@ -780,5 +854,6 @@ module.exports = {
     deletePedido,
     finalizePedidoAndRegisterPayment,
     addItensToExistingOrder,
-    getPedidoPublico // <-- Adicionado para exportar corretamente
+    getPedidoPublico,
+    updateNfceByIntegration // Exporta a nova função
 };

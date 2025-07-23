@@ -1,6 +1,7 @@
 // backend/src/controllers/authController.js
 const { pool } = require('../config/db');
 const { comparePassword, generateToken, hashPassword } = require('../utils/authUtils');
+const { v4: uuidv4 } = require('uuid'); // Adiciona para gerar tokens únicos
 
 // Função auxiliar para obter o status da empresa
 const getCompanyStatus = async (empresaId) => {
@@ -216,10 +217,80 @@ const registerClient = async (req, res, next) => {
   }
 };
 
+// Autenticação para integração desktop (token único)
+const integrationLogin = async (req, res, next) => {
+  const { slug } = req.params;
+  const { login, senha } = req.body;
+
+  if (!slug || !login || !senha) {
+    return res.status(400).json({ message: 'Slug, login e senha são obrigatórios.' });
+  }
+
+  try {
+    // Busca empresa pelo slug
+    const [empRows] = await pool.query('SELECT id, status FROM empresas WHERE slug = ?', [slug]);
+    if (empRows.length === 0) {
+      return res.status(404).json({ message: 'Empresa não encontrada.' });
+    }
+    const empresa = empRows[0];
+    if (empresa.status !== 'Ativa') {
+      return res.status(403).json({ message: 'Empresa inativa.' });
+    }
+
+    // Busca funcionário pelo login (email) e empresa_id
+    const [funcRows] = await pool.query('SELECT * FROM funcionarios WHERE email = ? AND empresa_id = ?', [login, empresa.id]);
+    if (funcRows.length === 0) {
+      return res.status(401).json({ message: 'Funcionário não encontrado ou credenciais inválidas.' });
+    }
+    const funcionario = funcRows[0];
+    const isMatch = await comparePassword(senha, funcionario.senha_hash);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Credenciais inválidas.' });
+    }
+    if (!funcionario.ativo) {
+      return res.status(403).json({ message: 'Funcionário inativo.' });
+    }
+
+    // Se já existe um integration_token, retorna o mesmo
+    if (funcionario.integration_token) {
+      return res.status(200).json({
+        message: 'Login de integração realizado com sucesso!',
+        integration_token: funcionario.integration_token,
+        funcionario: {
+          id: funcionario.id,
+          nome: funcionario.nome,
+          email: funcionario.email,
+          role: funcionario.role,
+          empresa_id: funcionario.empresa_id
+        }
+      });
+    }
+
+    // Gera novo token único
+    const integration_token = uuidv4();
+    await pool.query('UPDATE funcionarios SET integration_token = ? WHERE id = ?', [integration_token, funcionario.id]);
+
+    res.status(200).json({
+      message: 'Login de integração realizado com sucesso!',
+      integration_token,
+      funcionario: {
+        id: funcionario.id,
+        nome: funcionario.nome,
+        email: funcionario.email,
+        role: funcionario.role,
+        empresa_id: funcionario.empresa_id
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 module.exports = {
   adminLogin,
   funcionarioLogin,
   clienteLogin,
-  registerClient
+  registerClient,
+  integrationLogin // Exporta a nova função
 };
