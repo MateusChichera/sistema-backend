@@ -117,6 +117,11 @@ const createPedido = async (req, res, next) => {
     }
 
     const connection = await pool.getConnection();
+
+    // Busca configuração da empresa para estoque
+    const [configEstoqueRows] = await connection.query('SELECT permitir_pedidos_estoque_zerado FROM config_empresa WHERE empresa_id = ?', [empresaId]);
+    const permitirEstoqueZerado = configEstoqueRows.length > 0 ? parseInt(configEstoqueRows[0].permitir_pedidos_estoque_zerado) : 0;
+
     try {
         await connection.beginTransaction();
 
@@ -186,10 +191,16 @@ const createPedido = async (req, res, next) => {
 
         // 2. Inserir os itens do pedido e calcular o valor total
         for (const item of itens) {
-            const [produtoRows] = await connection.query('SELECT preco, promocao, promo_ativa FROM produtos WHERE id = ? AND empresa_id = ?', [item.id_produto, empresaId]);
+            const [produtoRows] = await connection.query('SELECT preco, promocao, promo_ativa, estoque FROM produtos WHERE id = ? AND empresa_id = ?', [item.id_produto, empresaId]);
             if (produtoRows.length === 0) {
                 await connection.rollback();
                 return res.status(404).json({ message: `Produto com ID ${item.id_produto} não encontrado ou não pertence a esta empresa.` });
+            }
+            // Verifica se há estoque suficiente (se o estoque for gerenciado)
+            const estoqueAtual = produtoRows[0].estoque;
+            if (permitirEstoqueZerado === 0 && estoqueAtual !== null && estoqueAtual < item.quantidade) {
+                await connection.rollback();
+                return res.status(409).json({ message: `Estoque insuficiente para o produto ID ${item.id_produto}. Disponível: ${estoqueAtual}, solicitado: ${item.quantidade}.` });
             }
             const produtoPreco = parseFloat(produtoRows[0].preco);
             const produtoPromocao = parseFloat(produtoRows[0].promocao);
@@ -202,6 +213,8 @@ const createPedido = async (req, res, next) => {
                 `INSERT INTO itens_pedido (id_pedido, id_produto, quantidade, preco_unitario, observacoes) VALUES (?, ?, ?, ?, ?)`,
                 [pedidoId, item.id_produto, item.quantidade, precoUnitarioAplicado, item.observacoes || null]
             );
+            // Atualiza o estoque do produto (desconta)
+            await connection.query('UPDATE produtos SET estoque = estoque - ? WHERE id = ? AND empresa_id = ?', [item.quantidade, item.id_produto, empresaId]);
             const itemPedidoId = itemResult.insertId;
 
             // --- Processar adicionais (se houver) ---
@@ -473,6 +486,14 @@ const updatePedidoStatus = async (req, res, next) => {
             return res.status(404).json({ message: 'Pedido não encontrado ou não pertence a esta empresa.' });
         }
 
+        if (status === 'Cancelado' && currentStatusData.status !== 'Cancelado') {
+            // Repor estoque dos itens do pedido
+            const [itensCancelar] = await connection.query('SELECT id_produto, quantidade FROM itens_pedido WHERE id_pedido = ?', [id]);
+            for (const item of itensCancelar) {
+                await connection.query('UPDATE produtos SET estoque = estoque + ? WHERE id = ? AND empresa_id = ?', [item.quantidade, item.id_produto, empresaId]);
+            }
+        }
+
         if (currentStatusData.id_mesa && (status === 'Entregue' || status === 'Cancelado')) {
             await connection.query(`UPDATE mesas SET status = 'Livre' WHERE id = ? AND empresa_id = ?`, [currentStatusData.id_mesa, empresaId]);
             io.to(`company_${empresaId}`).emit('mesaUpdated', { id: currentStatusData.id_mesa, status: 'Livre' });
@@ -674,6 +695,11 @@ const addItensToExistingOrder = async (req, res, next) => {
     }
 
     const connection = await pool.getConnection();
+
+    // Busca configuração da empresa para estoque
+    const [configEstoqueRows] = await connection.query('SELECT permitir_pedidos_estoque_zerado FROM config_empresa WHERE empresa_id = ?', [empresaId]);
+    const permitirEstoqueZerado = configEstoqueRows.length > 0 ? parseInt(configEstoqueRows[0].permitir_pedidos_estoque_zerado) : 0;
+
     try {
         await connection.beginTransaction();
 
@@ -692,10 +718,16 @@ const addItensToExistingOrder = async (req, res, next) => {
         let novoValorTotalDoPedido = parseFloat(pedido.valor_total);
 
         for (const item of newItens) {
-            const [produtoRows] = await connection.query('SELECT preco, promocao, promo_ativa FROM produtos WHERE id = ? AND empresa_id = ?', [item.id_produto, empresaId]);
+            const [produtoRows] = await connection.query('SELECT preco, promocao, promo_ativa, estoque FROM produtos WHERE id = ? AND empresa_id = ?', [item.id_produto, empresaId]);
             if (produtoRows.length === 0) {
                 await connection.rollback();
                 return res.status(404).json({ message: `Produto com ID ${item.id_produto} não encontrado ou não pertence a esta empresa.` });
+            }
+            // Verifica estoque suficiente
+            const estoqueAtual = produtoRows[0].estoque;
+            if (permitirEstoqueZerado === 0 && estoqueAtual !== null && estoqueAtual < item.quantidade) {
+                await connection.rollback();
+                return res.status(409).json({ message: `Estoque insuficiente para o produto ID ${item.id_produto}. Disponível: ${estoqueAtual}, solicitado: ${item.quantidade}.` });
             }
             const produtoPreco = parseFloat(produtoRows[0].preco);
             const produtoPromocao = parseFloat(produtoRows[0].promocao);
@@ -708,6 +740,8 @@ const addItensToExistingOrder = async (req, res, next) => {
                 `INSERT INTO itens_pedido (id_pedido, id_produto, quantidade, preco_unitario, observacoes) VALUES (?, ?, ?, ?, ?)`,
                 [pedidoId, item.id_produto, item.quantidade, precoUnitarioAplicado, item.observacoes || null]
             );
+            // Desconta estoque
+            await connection.query('UPDATE produtos SET estoque = estoque - ? WHERE id = ? AND empresa_id = ?', [item.quantidade, item.id_produto, empresaId]);
             const itemPedidoId = itemResult.insertId;
 
             // Processar adicionais

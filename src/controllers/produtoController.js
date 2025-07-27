@@ -6,7 +6,9 @@ const createProduto = async (req, res, next) => {
   const { 
     id_categoria, nome, descricao, preco,
     promocao, promo_ativa, ativo,
-    ncm, perfil_tributario_id
+    ncm, perfil_tributario_id,
+    estoque, // Novo campo
+    custo    // Novo campo
   } = req.body;
   
   const empresaId = req.empresa_id; // Vem do middleware extractEmpresaId
@@ -31,12 +33,15 @@ const createProduto = async (req, res, next) => {
     const [result] = await pool.query(
       `INSERT INTO produtos (
         empresa_id, id_categoria, nome, descricao, preco,
-        promocao, promo_ativa, ativo, foto_url, ncm, perfil_tributario_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        promocao, promo_ativa, ativo, foto_url, ncm, perfil_tributario_id,
+        estoque, custo
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         empresaId, id_categoria, nome, descricao || null, preco,
         promocao || null, promo_ativa || false, ativo !== undefined ? ativo : true, foto_url,
-        ncm || null, perfil_tributario_id || null
+        ncm || null, perfil_tributario_id || null,
+        estoque !== undefined ? estoque : 0,
+        custo !== undefined ? custo : 0
       ]
     );
     res.status(201).json({
@@ -53,7 +58,9 @@ const createProduto = async (req, res, next) => {
         ativo: ativo !== undefined ? ativo : true,
         foto_url,
         ncm: ncm || null,
-        perfil_tributario_id: perfil_tributario_id || null
+        perfil_tributario_id: perfil_tributario_id || null,
+        estoque: estoque !== undefined ? estoque : 0,
+        custo: custo !== undefined ? custo : 0
       }
     });
   } catch (error) {
@@ -79,7 +86,7 @@ const getAllProdutosByEmpresa = async (req, res, next) => {
     return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para visualizar produtos.' });
   }
 
-  let query = 'SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.empresa_id = ?';
+  let query = 'SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id, p.estoque, p.custo FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.empresa_id = ?';
   let queryParams = [empresaId];
 
   if (id_categoria) {
@@ -113,7 +120,7 @@ const getProdutoById = async (req, res, next) => {
   }
 
   try {
-    const [rows] = await pool.query('SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.id = ? AND p.empresa_id = ?', [id, empresaId]);
+    const [rows] = await pool.query('SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id, p.estoque, p.custo FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.id = ? AND p.empresa_id = ?', [id, empresaId]);
 
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Produto não encontrado ou não pertence a esta empresa.' });
@@ -131,7 +138,9 @@ const updateProduto = async (req, res, next) => {
     id_categoria, nome, descricao, preco,
     promocao, promo_ativa, ativo,
     remover_foto, // Flag para remover a foto existente
-    ncm, perfil_tributario_id
+    ncm, perfil_tributario_id,
+    estoque, // Novo campo
+    custo    // Novo campo
   } = req.body;
   const empresaId = req.empresa_id;
   const requestingUserRole = req.user.role;
@@ -166,6 +175,8 @@ const updateProduto = async (req, res, next) => {
   }
   if (ncm !== undefined) { updateFields.push('ncm = ?'); updateValues.push(ncm); }
   if (perfil_tributario_id !== undefined) { updateFields.push('perfil_tributario_id = ?'); updateValues.push(perfil_tributario_id); }
+  if (estoque !== undefined) { updateFields.push('estoque = ?'); updateValues.push(estoque); }
+  if (custo !== undefined) { updateFields.push('custo = ?'); updateValues.push(custo); }
 
   if (updateFields.length === 0) {
     return res.status(400).json({ message: 'Nenhum dado para atualizar fornecido.' });
@@ -228,15 +239,22 @@ const getPublicProdutosByEmpresa = async (req, res, next) => {
   }
 
   // Não há verificação de role aqui, pois é uma rota pública.
+  // Busca configuração se deve esconder produtos sem estoque
+  const [configRows] = await pool.query('SELECT nao_mostrar_cardapio_estoque_zerado FROM config_empresa WHERE empresa_id = ?', [empresaId]);
+  const ocultarSemEstoque = configRows.length > 0 ? parseInt(configRows[0].nao_mostrar_cardapio_estoque_zerado) : 0;
+
   // Apenas produtos ativos e que são para o cardápio devem ser retornados.
   let query = `
     SELECT 
         p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, 
-        c.descricao AS categoria_nome, p.id_categoria
+        c.descricao AS categoria_nome, p.id_categoria, p.estoque, p.custo
     FROM produtos p 
     JOIN categorias c ON p.id_categoria = c.id 
     WHERE p.empresa_id = ? AND p.ativo = TRUE
   `;
+  if (ocultarSemEstoque === 1) {
+    query += ' AND p.estoque > 0';
+  }
   // Futuramente, adicionar filtro por 'disponivel_cardapio' se houver essa coluna
   // e se o produto não for um combo (se combos não forem exibidos diretamente no cardápio inicial)
 
