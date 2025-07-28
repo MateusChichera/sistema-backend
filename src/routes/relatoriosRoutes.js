@@ -22,6 +22,14 @@ router.get('/gerencial/:slug/relatorios/pedidos',
     relatoriosController.getRelatorioPedidos
 );
 
+// Rota para obter o relatório de estoque (stored procedure)
+router.get('/gerencial/:slug/relatorios/estoque',
+    extractEmpresaId,
+    authenticateToken,
+    authorizeRole(['Proprietario','Gerente']),
+    relatoriosController.getRelatorioEstoque
+);
+
 
 
 

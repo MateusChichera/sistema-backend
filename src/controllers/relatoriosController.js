@@ -107,8 +107,45 @@ const getRelatorioPedidos = async (req, res, next) => {
     }
 };
 
+const getRelatorioEstoque = async (req, res, next) => {
+    const empresaId = req.empresa_id;
+    const {
+        data_inicio,
+        data_fim,
+        resultado, // Positivo, Negativo ou Zerado
+        curva // A, B, C ou combinações como A,C
+    } = req.query;
+
+    if(!['Proprietario','Gerente'].includes(req.user.role)){
+        return res.status(403).json({message:'Acesso negado'});
+    }
+
+    try {
+        // Preparar parâmetros para a stored procedure
+        const dataInicio = data_inicio || null;
+        const dataFim = data_fim || null;
+        const resultadoParam = resultado || null;
+        const curvaParam = curva || null;
+
+        // Chamar a stored procedure
+        const [rows] = await pool.query(
+            'CALL sp_relatorio_gerencial_estoque_final(?, ?, ?, ?, ?)',
+            [empresaId, dataInicio, dataFim, resultadoParam, curvaParam]
+        );
+
+        // A stored procedure pode retornar múltiplos result sets
+        // Geralmente o primeiro result set contém os dados principais
+        const dadosRelatorio = rows[0] || [];
+        
+        return res.json(dadosRelatorio);
+    } catch (error) {
+        return next(error);
+    }
+};
+
 module.exports = {
     getRelatorioCaixa,
-    getRelatorioPedidos
+    getRelatorioPedidos,
+    getRelatorioEstoque
 };
 
