@@ -27,6 +27,7 @@ const acessoPublicRoutes = require('./routes/acessoPublicRoutes');
 const adicionalRoutes = require('./routes/adicionalRoutes');
 const produtoAdicionalRoutes = require('./routes/produtoAdicionalRoutes');
 const integracaoRoutes = require('./routes/integracaoRoutes');
+const relatoriosRoutes = require('./routes/relatoriosRoutes');
 
 dotenv.config();
 
@@ -84,6 +85,7 @@ app.use('/api/v1', acessoPublicRoutes);
 app.use('/api/v1', adicionalRoutes);
 app.use('/api/v1', produtoAdicionalRoutes);
 app.use('/api/v1', integracaoRoutes);
+app.use('/api/v1', relatoriosRoutes);
 
 app.use('/api/v1', testRoutes);
 

@@ -78,4 +78,22 @@ router.get(
   caixaController.getCaixaAberto
 );
 
+// Fechamento completo (um caixa): GET /api/v1/gerencial/:slug/caixas/:id/fechamento-completo
+router.get(
+  '/gerencial/:slug/caixas/:id/fechamento-completo',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente', 'Caixa']),
+  caixaController.getFechamentoCompleto
+);
+
+// Listar fechamentos completos: GET /api/v1/gerencial/:slug/caixas/fechamentos-completos
+router.get(
+  '/gerencial/:slug/caixas/fechamentos-completos',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente', 'Caixa']),
+  caixaController.listFechamentosCompletos
+);
+
 module.exports = router; 

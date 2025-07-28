@@ -141,6 +141,68 @@ const getFechamentoDetalhes = async (req, res, next) => {
   }
 };
 
+// Novo: Fechamento completo via VIEW (um caixa específico)
+const getFechamentoCompleto = async (req, res, next) => {
+  const empresaId = req.empresa_id;
+  const caixaId = req.params.id;
+  const requestingUser = req.user;
+
+  if (!['Proprietario', 'Gerente', 'Caixa'].includes(requestingUser.role)) {
+    return res.status(403).json({ message: 'Acesso negado.' });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT * FROM view_fechamento_caixa_completo WHERE caixa_id = ? AND empresas_id = ?`,
+      [caixaId, empresaId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Dados de fechamento não encontrados para este caixa.' });
+    }
+
+    return res.status(200).json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Novo: Listar fechamentos completos de todos os caixas de uma empresa (pode filtrar por período)
+const listFechamentosCompletos = async (req, res, next) => {
+  const empresaId = req.empresa_id;
+  const requestingUser = req.user;
+  const { data_inicio, data_fim, status } = req.query;
+
+  if (!['Proprietario', 'Gerente', 'Caixa'].includes(requestingUser.role)) {
+    return res.status(403).json({ message: 'Acesso negado.' });
+  }
+
+  let query = `SELECT * FROM view_fechamento_caixa_completo WHERE empresas_id = ?`;
+  const params = [empresaId];
+
+  if (status) {
+    query += ' AND status = ?';
+    params.push(status);
+  }
+  if (data_inicio) {
+    query += ' AND DATE(data_abertura) >= ?';
+    params.push(data_inicio);
+  }
+  if (data_fim) {
+    query += ' AND DATE(data_abertura) <= ?';
+    params.push(data_fim);
+  }
+
+  query += ' ORDER BY data_abertura DESC, numero_caixa_dia DESC';
+
+  try {
+    const [rows] = await pool.query(query, params);
+    return res.status(200).json(rows);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Fechar caixa
 const closeCaixa = async (req, res, next) => {
   const empresaId = req.empresa_id;
@@ -179,6 +241,7 @@ const closeCaixa = async (req, res, next) => {
 
     const valorInformado = parseFloat(valor_fechamento_informado) || 0.0;
     const diferenca = valorInformado - valorSistema;
+
 
     // 3. Atualiza o caixa
     await connection.query(
@@ -357,9 +420,11 @@ const getFaturamentoPorFormaPagamento = async (req, res, next) => {
 module.exports = {
   openCaixa,
   getFechamentoDetalhes,
+  getFechamentoCompleto,
   closeCaixa,
   addMovimentacao,
   listMovimentacoes,
   getCaixaAberto,
-  getFaturamentoPorFormaPagamento
+  getFaturamentoPorFormaPagamento,
+  listFechamentosCompletos
 }; 
