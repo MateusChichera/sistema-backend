@@ -86,7 +86,7 @@ const getAllProdutosByEmpresa = async (req, res, next) => {
     return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para visualizar produtos.' });
   }
 
-  let query = 'SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id, p.estoque, p.custo FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.empresa_id = ?';
+  let query = 'SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id, p.estoque, p.custo, c.ordem AS categoria_ordem FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.empresa_id = ?';
   let queryParams = [empresaId];
 
   if (id_categoria) {
@@ -94,7 +94,7 @@ const getAllProdutosByEmpresa = async (req, res, next) => {
     queryParams.push(id_categoria);
   }
 
-  query += ' ORDER BY p.nome';
+  query += ' ORDER BY c.ordem ASC, c.descricao ASC, p.nome ASC';
 
   try {
     const [produtos] = await pool.query(query, queryParams);
@@ -120,7 +120,7 @@ const getProdutoById = async (req, res, next) => {
   }
 
   try {
-    const [rows] = await pool.query('SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id, p.estoque, p.custo FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.id = ? AND p.empresa_id = ?', [id, empresaId]);
+    const [rows] = await pool.query('SELECT p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, c.descricao AS categoria_nome, p.id_categoria, p.ncm, p.perfil_tributario_id, p.estoque, p.custo, c.ordem AS categoria_ordem FROM produtos p JOIN categorias c ON p.id_categoria = c.id WHERE p.id = ? AND p.empresa_id = ?', [id, empresaId]);
 
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Produto não encontrado ou não pertence a esta empresa.' });
@@ -247,16 +247,16 @@ const getPublicProdutosByEmpresa = async (req, res, next) => {
   let query = `
     SELECT 
         p.id, p.nome, p.descricao, p.preco, p.promocao, p.promo_ativa, p.ativo, p.foto_url, 
-        c.descricao AS categoria_nome, p.id_categoria, p.estoque, p.custo
+        c.descricao AS categoria_nome, p.id_categoria, p.estoque, p.custo, c.ordem AS categoria_ordem
     FROM produtos p 
     JOIN categorias c ON p.id_categoria = c.id 
-    WHERE p.empresa_id = ? AND p.ativo = TRUE
+    WHERE p.empresa_id = ? AND p.ativo = TRUE AND c.ativo = TRUE
   `;
   if (ocultarSemEstoque === 1) {
     query += ' AND p.estoque > 0';
   }
-  // Futuramente, adicionar filtro por 'disponivel_cardapio' se houver essa coluna
-  // e se o produto não for um combo (se combos não forem exibidos diretamente no cardápio inicial)
+  // Ordenar por ordem da categoria e depois por nome do produto
+  query += ' ORDER BY c.ordem ASC, c.descricao ASC, p.nome ASC';
 
   try {
     const [produtos] = await pool.query(query, [empresaId]);

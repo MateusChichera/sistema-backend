@@ -1,8 +1,10 @@
 // backend/src/server.js
 const express = require('express');
 const dotenv = require('dotenv');
-const cors = require('cors');
 const path = require('path');
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+const cors = require('cors');
+
 const http = require('http'); // Importa o módulo HTTP
 const { Server } = require('socket.io'); // Importa o Server do socket.io
 
@@ -36,7 +38,15 @@ const app = express();
 const server = http.createServer(app); // Cria um servidor HTTP a partir do app Express
 const io = new Server(server, { // Anexa o Socket.IO ao servidor HTTP
   cors: {
-    origin: process.env.FRONTEND_URL,
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:3000', 
+      'http://127.0.0.1:5173',
+      'http://212.85.23.251:5173',
+      'http://212.85.23.251:3000',
+      'https://athospp.com.br',
+      'http://athospp.com.br'
+    ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
@@ -47,7 +57,15 @@ const port = process.env.PORT || 3001;
 
 // Middlewares
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:3000', 
+    'http://127.0.0.1:5173',
+    'http://212.85.23.251:5173',
+    'http://212.85.23.251:3000',
+    'https://athospp.com.br',
+    'http://athospp.com.br'
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE','PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true // Importante para cookies/auth

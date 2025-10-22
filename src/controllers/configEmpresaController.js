@@ -31,7 +31,16 @@ const getConfigBySlug = async (req, res, next) => {
       return res.status(404).json({ message: 'Configurações da empresa não encontradas.' });
     }
 
-    res.status(200).json(rows[0]);
+    // Buscar categorias ordenadas para incluir na resposta
+    const [categorias] = await pool.query(
+      'SELECT id, descricao, ativo, ordem FROM categorias WHERE empresa_id = ? AND ativo = TRUE ORDER BY ordem ASC, descricao ASC',
+      [empresaId]
+    );
+
+    const config = rows[0];
+    config.categorias = categorias;
+
+    res.status(200).json(config);
   } catch (error) {
     next(error);
   }

@@ -53,4 +53,13 @@ router.delete(
   categoriaController.deleteCategoria
 );
 
+// Atualizar ordem das categorias: PUT /api/v1/gerencial/:slug/categorias/ordem
+router.put(
+  '/gerencial/:slug/categorias/ordem',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente']),
+  categoriaController.updateOrdemCategorias
+);
+
 module.exports = router;
