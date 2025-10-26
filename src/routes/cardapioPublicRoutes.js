@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const produtoController = require('../controllers/produtoController');
 const categoriaController = require('../controllers/categoriaController');
+const enderecoController = require('../controllers/enderecoController');
 const { extractEmpresaId } = require('../middlewares/empresaMiddleware');
 
 // Rotas PÚBLICAS para o Cardápio Digital (não precisam de autenticação via token)
@@ -30,6 +31,22 @@ router.get(
   '/:slug/cardapio/produtos/:id/adicionais',
   extractEmpresaId,
   produtoController.getPublicAdicionaisByProduto
+);
+
+// Buscar endereço do dia atual (rota pública)
+// GET /api/v1/:slug/endereco-dia-atual
+router.get(
+  '/:slug/endereco-dia-atual',
+  extractEmpresaId,
+  enderecoController.getEnderecoDiaAtual
+);
+
+// Buscar avisos do dia atual (rota pública)
+// GET /api/v1/:slug/avisos-dia-atual
+router.get(
+  '/:slug/avisos-dia-atual',
+  extractEmpresaId,
+  enderecoController.getAvisosDiaAtual
 );
 
 module.exports = router;

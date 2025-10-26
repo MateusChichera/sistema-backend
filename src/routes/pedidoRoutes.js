@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const pedidoController = require('../controllers/pedidoController');
+const pedidoContasPrazoController = require('../controllers/pedidoContasPrazoController');
 const { authenticateToken, authorizeRole,authenticateOptional } = require('../middlewares/authMiddleware');
 const { extractEmpresaId } = require('../middlewares/empresaMiddleware');
 
@@ -81,6 +82,40 @@ router.get(
   '/:slug/pedidos/publico/:id',
   extractEmpresaId,
   pedidoController.getPedidoPublico
+);
+
+// =====================================================
+// ROTAS PARA CONTAS A PRAZO (INTEGRAÇÃO COM PEDIDOS)
+// =====================================================
+
+// Finalizar pedido com pagamento a prazo
+// POST /api/v1/gerencial/:slug/pedidos/:id/finalizar-a-prazo
+router.post(
+  '/gerencial/:slug/pedidos/:id/finalizar-a-prazo',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente', 'Caixa']),
+  pedidoContasPrazoController.finalizePedidoContasPrazo
+);
+
+// Buscar clientes para seleção no finalizamento
+// GET /api/v1/gerencial/:slug/pedidos/clientes/buscar
+router.get(
+  '/gerencial/:slug/pedidos/clientes/buscar',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente', 'Caixa', 'Funcionario']),
+  pedidoContasPrazoController.searchClientesForPedido
+);
+
+// Cadastrar cliente rapidamente durante finalização
+// POST /api/v1/gerencial/:slug/pedidos/clientes/rapido
+router.post(
+  '/gerencial/:slug/pedidos/clientes/rapido',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente', 'Caixa']),
+  pedidoContasPrazoController.createClienteRapidoForPedido
 );
 
 module.exports = router;

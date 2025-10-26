@@ -416,6 +416,52 @@ const getFaturamentoPorFormaPagamento = async (req, res, next) => {
   }
 };
 
+// Listar movimentações de contas a prazo de um caixa
+const getMovimentacoesContasPrazo = async (req, res, next) => {
+  const empresaId = req.empresa_id;
+  const caixaId = req.params.id;
+  const requestingUser = req.user;
+
+  if (!['Proprietario', 'Gerente', 'Caixa'].includes(requestingUser.role)) {
+    return res.status(403).json({ message: 'Acesso negado.' });
+  }
+
+  try {
+    // Verificar se o caixa pertence à empresa
+    const [[caixaRow]] = await pool.query(
+      `SELECT id FROM caixas WHERE id = ? AND empresas_id = ?`,
+      [caixaId, empresaId]
+    );
+    if (!caixaRow) {
+      return res.status(404).json({ message: 'Caixa não encontrado para esta empresa.' });
+    }
+
+    const [movimentacoes] = await pool.query(
+      `SELECT 
+        cm.id, cm.tipo_movimentacao, cm.valor, cm.data_movimentacao, cm.observacoes,
+        fp.descricao AS forma_pagamento_descricao,
+        f.nome AS funcionario_nome,
+        tp.titulo_id,
+        t.numero_titulo,
+        c.nome AS cliente_nome
+       FROM caixa_movimentacoes cm
+       LEFT JOIN formas_pagamento fp ON cm.id_forma_pagamento = fp.id
+       LEFT JOIN funcionarios f ON cm.funcionario_id = f.id
+       LEFT JOIN titulo_pagamentos tp ON cm.observacoes LIKE CONCAT('%Título #', t.numero_titulo, '%')
+       LEFT JOIN titulos t ON tp.titulo_id = t.id
+       LEFT JOIN clientes_contas_prazo c ON t.cliente_contas_prazo_id = c.id
+       WHERE cm.caixa_id = ? AND cm.empresas_id = ?
+       AND cm.observacoes LIKE '%conta a prazo%'
+       ORDER BY cm.data_movimentacao DESC`,
+      [caixaId, empresaId]
+    );
+
+    return res.status(200).json(movimentacoes);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Exportações atualizadas
 module.exports = {
   openCaixa,
@@ -426,5 +472,6 @@ module.exports = {
   listMovimentacoes,
   getCaixaAberto,
   getFaturamentoPorFormaPagamento,
-  listFechamentosCompletos
+  listFechamentosCompletos,
+  getMovimentacoesContasPrazo
 }; 

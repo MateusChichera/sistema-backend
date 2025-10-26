@@ -81,6 +81,22 @@ const createEmpresa = async (req, res, next) => {
       [empresaId]
     );
 
+    // 6. Criar formas de pagamento padrão automaticamente
+    const formasPagamentoPadrao = [
+      { descricao: 'Dinheiro', porcentagem_desconto_geral: 0, ativo: true },
+      { descricao: 'Cartão de Crédito', porcentagem_desconto_geral: 0, ativo: true },
+      { descricao: 'Cartão de Débito', porcentagem_desconto_geral: 0, ativo: true },
+      { descricao: 'PIX', porcentagem_desconto_geral: 0, ativo: true },
+      { descricao: 'A Prazo', porcentagem_desconto_geral: 0, ativo: true }
+    ];
+
+    for (const forma of formasPagamentoPadrao) {
+      await connection.query(
+        `INSERT INTO formas_pagamento (empresa_id, descricao, porcentagem_desconto_geral, ativo) VALUES (?, ?, ?, ?)`,
+        [empresaId, forma.descricao, forma.porcentagem_desconto_geral, forma.ativo]
+      );
+    }
+
     await connection.commit(); // Confirma a transação
 
     res.status(201).json({

@@ -1,4 +1,3 @@
-// backend/src/controllers/avisoController.js
 const { pool } = require('../config/db');
 
 // 1. Criar um novo aviso (apenas admin do sistema)
@@ -268,8 +267,6 @@ const checkAvisosNaoLidos = async (req, res, next) => {
   }
 };
 
-
-
 // 9. Listar todos os avisos com detalhes por empresa (apenas admin)
 const getAllAvisosWithDetails = async (req, res, next) => {
   const requestingUserRole = req.user.role;
@@ -391,4 +388,4 @@ module.exports = {
   updateAvisoStatus,
   checkAvisosNaoLidos,
   getAllAvisosWithDetails
-}; 
+};

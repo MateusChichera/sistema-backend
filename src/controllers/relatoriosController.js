@@ -143,9 +143,144 @@ const getRelatorioEstoque = async (req, res, next) => {
     }
 };
 
+const getRelatorioContasPrazo = async (req, res, next) => {
+    const empresaId = req.empresa_id;
+    const {
+        data_inicio,
+        data_fim,
+        tipo_filtro, // 'emissao' ou 'vencimento'
+        status_titulo,
+        cliente_id,
+        funcionario_id
+    } = req.query;
+
+    if (!['Proprietario', 'Gerente', 'Caixa'].includes(req.user.role)) {
+        return res.status(403).json({ message: 'Acesso negado' });
+    }
+
+    try {
+        // Determinar o campo de data baseado no tipo_filtro
+        let campoData = 't.data_emissao';
+        if (tipo_filtro === 'vencimento') {
+            campoData = 't.data_vencimento';
+        }
+
+        let query = `
+            SELECT 
+                t.id AS titulo_id,
+                t.numero_titulo,
+                t.descricao AS titulo_descricao,
+                t.valor_total,
+                t.valor_pago,
+                t.valor_restante,
+                t.data_emissao,
+                t.data_vencimento,
+                t.data_pagamento,
+                t.status,
+                t.juros_aplicado,
+                c.id AS cliente_id,
+                c.nome AS cliente_nome,
+                c.telefone AS cliente_telefone,
+                c.email AS cliente_email,
+                f.nome AS funcionario_nome,
+                e.razao_social AS empresa_nome,
+                e.juros_titulos AS percentual_juros_empresa,
+                DATEDIFF(CURDATE(), t.data_vencimento) AS dias_vencimento,
+                CASE 
+                    WHEN t.status = 'Pago' THEN 'Pago'
+                    WHEN t.data_vencimento < CURDATE() AND t.status = 'Pendente' THEN 'Vencido'
+                    WHEN t.data_vencimento = CURDATE() AND t.status = 'Pendente' THEN 'Vence hoje'
+                    WHEN t.status = 'Pendente' THEN 'Em dia'
+                    ELSE t.status
+                END AS situacao_titulo,
+                CASE 
+                    WHEN t.status = 'Pago' THEN 'Sim'
+                    ELSE 'Não'
+                END AS recebido,
+                -- Calcular juros se vencido
+                CASE 
+                    WHEN t.data_vencimento < CURDATE() AND t.status = 'Pendente' AND e.juros_titulos > 0 THEN
+                        ROUND((t.valor_restante * e.juros_titulos / 100) * DATEDIFF(CURDATE(), t.data_vencimento) / 30, 2)
+                    ELSE 0
+                END AS juros_calculado,
+                -- Valor total com juros
+                CASE 
+                    WHEN t.data_vencimento < CURDATE() AND t.status = 'Pendente' AND e.juros_titulos > 0 THEN
+                        t.valor_restante + ROUND((t.valor_restante * e.juros_titulos / 100) * DATEDIFF(CURDATE(), t.data_vencimento) / 30, 2)
+                    ELSE t.valor_restante
+                END AS valor_total_com_juros
+            FROM titulos t
+            LEFT JOIN clientes_contas_prazo c ON t.cliente_contas_prazo_id = c.id
+            LEFT JOIN funcionarios f ON t.funcionario_id = f.id
+            LEFT JOIN empresas e ON t.empresa_id = e.id
+            WHERE t.empresa_id = ?
+        `;
+
+        const params = [empresaId];
+
+        // Aplicar filtros
+        if (data_inicio) {
+            query += ` AND DATE(${campoData}) >= ?`;
+            params.push(data_inicio);
+        }
+        if (data_fim) {
+            query += ` AND DATE(${campoData}) <= ?`;
+            params.push(data_fim);
+        }
+        if (status_titulo) {
+            query += ` AND t.status = ?`;
+            params.push(status_titulo);
+        }
+        if (cliente_id) {
+            query += ` AND t.cliente_contas_prazo_id = ?`;
+            params.push(cliente_id);
+        }
+        if (funcionario_id) {
+            query += ` AND t.funcionario_id = ?`;
+            params.push(funcionario_id);
+        }
+
+        query += ` ORDER BY ${campoData} DESC`;
+
+        const [rows] = await pool.query(query, params);
+
+        // Calcular estatísticas do relatório
+        const estatisticas = {
+            total_titulos: rows.length,
+            titulos_pagos: rows.filter(r => r.status === 'Pago').length,
+            titulos_pendentes: rows.filter(r => r.status === 'Pendente').length,
+            titulos_vencidos: rows.filter(r => r.situacao_titulo === 'Vencido').length,
+            valor_total_emprestado: rows.reduce((sum, r) => sum + parseFloat(r.valor_total || 0), 0),
+            valor_total_pago: rows.reduce((sum, r) => sum + parseFloat(r.valor_pago || 0), 0),
+            valor_total_restante: rows.reduce((sum, r) => sum + parseFloat(r.valor_restante || 0), 0),
+            valor_total_juros: rows.reduce((sum, r) => sum + parseFloat(r.juros_calculado || 0), 0)
+        };
+
+        return res.json({
+            success: true,
+            data: rows,
+            estatisticas: estatisticas,
+            filtros_aplicados: {
+                data_inicio,
+                data_fim,
+                tipo_filtro,
+                status_titulo,
+                cliente_id,
+                funcionario_id
+            },
+            message: 'Relatório de contas a prazo gerado com sucesso!'
+        });
+
+    } catch (error) {
+        console.error('Erro ao gerar relatório de contas a prazo:', error);
+        return next(error);
+    }
+};
+
 module.exports = {
     getRelatorioCaixa,
     getRelatorioPedidos,
-    getRelatorioEstoque
+    getRelatorioEstoque,
+    getRelatorioContasPrazo
 };
 

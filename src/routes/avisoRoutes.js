@@ -1,4 +1,3 @@
-// backend/src/routes/avisoRoutes.js
 const express = require('express');
 const router = express.Router();
 const avisoController = require('../controllers/avisoController');
@@ -67,8 +66,6 @@ router.get(
   avisoController.checkAvisosNaoLidos
 );
 
-
-
 // Listar todos os avisos com detalhes por empresa (apenas admin): GET /api/v1/admin/avisos/detalhes
 router.get(
   '/admin/avisos/detalhes',
@@ -77,4 +74,4 @@ router.get(
   avisoController.getAllAvisosWithDetails
 );
 
-module.exports = router; 
+module.exports = router;

@@ -96,4 +96,13 @@ router.get(
   caixaController.listFechamentosCompletos
 );
 
+// Listar movimentações de contas a prazo: GET /api/v1/gerencial/:slug/caixas/:id/movimentacoes-contas-prazo
+router.get(
+  '/gerencial/:slug/caixas/:id/movimentacoes-contas-prazo',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente', 'Caixa']),
+  caixaController.getMovimentacoesContasPrazo
+);
+
 module.exports = router; 

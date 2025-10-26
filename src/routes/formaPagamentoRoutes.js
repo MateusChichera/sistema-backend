@@ -53,7 +53,38 @@ router.delete(
   formaPagamentoController.deleteFormaPagamento
 );
 
+// =====================================================
+// ROTAS PARA GERENCIAR ORDEM DAS FORMAS DE PAGAMENTO
+// =====================================================
 
+// Alterar ordem de uma forma de pagamento: PUT /api/v1/gerencial/:slug/formas-pagamento/:id/ordem
+router.put(
+  '/gerencial/:slug/formas-pagamento/:id/ordem',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente']), // Apenas Proprietario/Gerente pode alterar ordem
+  formaPagamentoController.alterarOrdemFormaPagamento
+);
+
+// Trocar ordem entre duas formas de pagamento: POST /api/v1/gerencial/:slug/formas-pagamento/trocar-ordem
+router.post(
+  '/gerencial/:slug/formas-pagamento/trocar-ordem',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente']), // Apenas Proprietario/Gerente pode trocar ordem
+  formaPagamentoController.trocarOrdemFormasPagamento
+);
+
+// Reordenar todas as formas de pagamento: POST /api/v1/gerencial/:slug/formas-pagamento/reordenar
+router.post(
+  '/gerencial/:slug/formas-pagamento/reordenar',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente']), // Apenas Proprietario/Gerente pode reordenar
+  formaPagamentoController.reordenarFormasPagamento
+);
+
+// Rota pública para cardápio digital
 router.get(
     '/:slug/formas-pagamento', // Rota sem '/gerencial'
     extractEmpresaId,         // Continua usando para identificar a empresa

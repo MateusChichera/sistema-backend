@@ -31,6 +31,10 @@ const produtoAdicionalRoutes = require('./routes/produtoAdicionalRoutes');
 const integracaoRoutes = require('./routes/integracaoRoutes');
 const relatoriosRoutes = require('./routes/relatoriosRoutes');
 const avisoRoutes = require('./routes/avisoRoutes');
+const avisosCardapioRoutes = require('./routes/avisosCardapioRoutes');
+const contasPrazoRoutes = require('./routes/contasPrazoRoutes');
+const enderecoRoutes = require('./routes/enderecoRoutes');
+const comprovanteRoutes = require('./routes/comprovanteRoutes');
 
 dotenv.config();
 
@@ -40,8 +44,10 @@ const io = new Server(server, { // Anexa o Socket.IO ao servidor HTTP
   cors: {
     origin: [
       'http://localhost:5173',
+      'http://localhost:5174',
       'http://localhost:3000', 
       'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
       'http://212.85.23.251:5173',
       'http://212.85.23.251:3000',
       'https://athospp.com.br',
@@ -56,20 +62,17 @@ const io = new Server(server, { // Anexa o Socket.IO ao servidor HTTP
 const port = process.env.PORT || 3001;
 
 // Middlewares
+// Configuração de CORS simples para desenvolvimento
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:3000', 
-    'http://127.0.0.1:5173',
-    'http://212.85.23.251:5173',
-    'http://212.85.23.251:3000',
-    'https://athospp.com.br',
-    'http://athospp.com.br'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE','PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true // Importante para cookies/auth
+  origin: true, // Permite todas as origens em desenvolvimento
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
+
+// Middleware adicional para lidar com requisições OPTIONS (preflight)
+app.options('*', cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -106,6 +109,10 @@ app.use('/api/v1', produtoAdicionalRoutes);
 app.use('/api/v1', integracaoRoutes);
 app.use('/api/v1', relatoriosRoutes);
 app.use('/api/v1', avisoRoutes);
+app.use('/api/v1', avisosCardapioRoutes);
+app.use('/api/v1', contasPrazoRoutes);
+app.use('/api/v1', enderecoRoutes);
+app.use('/api/v1', comprovanteRoutes);
 
 app.use('/api/v1', testRoutes);
 

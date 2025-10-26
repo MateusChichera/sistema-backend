@@ -30,6 +30,22 @@ router.get('/gerencial/:slug/relatorios/estoque',
     relatoriosController.getRelatorioEstoque
 );
 
+// Rota para obter o relatório de contas a prazo
+router.get('/gerencial/:slug/relatorios/contas-prazo',
+    extractEmpresaId,
+    authenticateToken,
+    authorizeRole(['Proprietario','Gerente','Caixa']),
+    relatoriosController.getRelatorioContasPrazo
+);
+
+// Rota para obter o resumo de contas a prazo
+router.get('/gerencial/:slug/relatorios/contas-prazo/resumo',
+    extractEmpresaId,
+    authenticateToken,
+    authorizeRole(['Proprietario','Gerente','Caixa']),
+    relatoriosController.getRelatorioContasPrazo
+);
+
 
 
 
