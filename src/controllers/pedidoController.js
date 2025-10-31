@@ -133,7 +133,8 @@ const createPedido = async (req, res, next) => {
         if (requestingUser?.id && requestingUser.role === 'cliente') {
             clienteIdParaPedido = requestingUser.id;
             nomeClienteParaPedido = requestingUser.nome;
-        } else if (!clienteIdParaPedido && nome_cliente_convidado && telefone_cliente_convidado) {
+        } else if (nome_cliente_convidado && telefone_cliente_convidado) {
+            // Para delivery ou pedidos com cliente convidado, sempre verificar/criar na tabela clientes
             const [existingGuest] = await connection.query(
                 `SELECT id, nome FROM clientes WHERE empresa_id = ? AND telefone = ? AND email = ?`,
                 [empresaId, telefone_cliente_convidado, email_cliente_convidado || null]

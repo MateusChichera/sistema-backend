@@ -205,7 +205,7 @@ const searchClientesForPedido = async (req, res, next) => {
   }
 
   let query = `
-    SELECT id, nome, telefone, email, cpf_cnpj
+    SELECT id, nome, telefone, email, cpf_cnpj, ativo
     FROM clientes_contas_prazo 
     WHERE empresa_id = ? AND ativo = 1
   `;

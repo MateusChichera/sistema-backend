@@ -152,7 +152,7 @@ const getAllTitulosByEmpresa = async (req, res, next) => {
       t.id, t.numero_titulo, t.descricao, t.valor_total, t.valor_pago, 
       t.valor_restante, t.data_vencimento, t.data_emissao, t.data_pagamento,
       t.status, t.observacoes,
-      c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+      c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.ativo AS cliente_ativo,
       f.nome AS funcionario_nome,
       DATEDIFF(CURDATE(), t.data_vencimento) AS dias_vencimento
     FROM titulos t
@@ -206,7 +206,7 @@ const getTituloById = async (req, res, next) => {
     // Buscar dados do título
     const [tituloRows] = await pool.query(
       `SELECT 
-        t.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.email AS cliente_email,
+        t.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.email AS cliente_email, c.ativo AS cliente_ativo,
         f.nome AS funcionario_nome,
         DATEDIFF(CURDATE(), t.data_vencimento) AS dias_vencimento
        FROM titulos t
@@ -271,7 +271,7 @@ const getDetalhesTitulo = async (req, res, next) => {
     const [tituloRows] = await pool.query(
       `SELECT 
         t.*, 
-        c.nome AS cliente_nome, 
+        c.nome AS cliente_nome, c.ativo AS cliente_ativo, 
         c.telefone AS cliente_telefone, 
         c.email AS cliente_email,
         c.endereco AS cliente_endereco,
@@ -435,7 +435,7 @@ const pagamentoMultiploTitulos = async (req, res, next) => {
     const [titulosRows] = await connection.query(
       `SELECT 
         t.*, 
-        c.nome AS cliente_nome,
+        c.nome AS cliente_nome, c.ativo AS cliente_ativo,
         e.juros_titulos AS percentual_juros_empresa
        FROM titulos t
        LEFT JOIN clientes_contas_prazo c ON t.cliente_contas_prazo_id = c.id
@@ -530,7 +530,7 @@ const pagamentoMultiploTitulos = async (req, res, next) => {
     const [titulosAtualizados] = await connection.query(
       `SELECT 
         t.*, 
-        c.nome AS cliente_nome,
+        c.nome AS cliente_nome, c.ativo AS cliente_ativo,
         c.telefone AS cliente_telefone,
         f.nome AS funcionario_nome
        FROM titulos t
@@ -750,9 +750,9 @@ const searchClientes = async (req, res, next) => {
   }
 
   let query = `
-    SELECT id, nome, telefone, email, cpf_cnpj
+    SELECT id, nome, telefone, email, cpf_cnpj, ativo
     FROM clientes_contas_prazo 
-    WHERE empresa_id = ? AND ativo = 1
+    WHERE empresa_id = ?
   `;
   
   const params = [empresaId];
@@ -763,7 +763,7 @@ const searchClientes = async (req, res, next) => {
     params.push(searchTerm, searchTerm, searchTerm);
   }
 
-  query += ' ORDER BY nome ASC LIMIT 20';
+  query += ' ORDER BY ativo DESC, nome ASC LIMIT 20';
 
   try {
     const [clientes] = await pool.query(query, params);
@@ -773,7 +773,71 @@ const searchClientes = async (req, res, next) => {
   }
 };
 
-// 8. Relatório de títulos vencidos
+// 8. Atualizar status ativo do cliente
+const updateClienteStatus = async (req, res, next) => {
+  const { id } = req.params;
+  const { ativo } = req.body;
+  const empresaId = req.empresa_id;
+  const requestingUser = req.user;
+
+  if (ativo === undefined) {
+    return res.status(400).json({ 
+      message: 'O campo ativo é obrigatório.' 
+    });
+  }
+
+  if (typeof ativo !== 'boolean' && ativo !== 0 && ativo !== 1) {
+    return res.status(400).json({ 
+      message: 'O campo ativo deve ser um valor booleano (true/false ou 1/0).' 
+    });
+  }
+
+  if (!['Proprietario', 'Gerente'].includes(requestingUser.role)) {
+    return res.status(403).json({ 
+      message: 'Acesso negado. Apenas Proprietário ou Gerente podem atualizar status de clientes.' 
+    });
+  }
+
+  try {
+    // Verificar se o cliente existe e pertence à empresa
+    const [clienteRows] = await pool.query(
+      'SELECT id, nome FROM clientes_contas_prazo WHERE id = ? AND empresa_id = ?',
+      [id, empresaId]
+    );
+
+    if (clienteRows.length === 0) {
+      return res.status(404).json({ 
+        message: 'Cliente não encontrado ou não pertence a esta empresa.' 
+      });
+    }
+
+    // Atualizar o status ativo
+    const ativoValue = ativo === true || ativo === 1 ? 1 : 0;
+    const [result] = await pool.query(
+      'UPDATE clientes_contas_prazo SET ativo = ? WHERE id = ? AND empresa_id = ?',
+      [ativoValue, id, empresaId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ 
+        message: 'Cliente não encontrado ou não foi possível atualizar.' 
+      });
+    }
+
+    res.status(200).json({
+      message: `Cliente ${ativoValue === 1 ? 'ativado' : 'desativado'} com sucesso!`,
+      cliente: {
+        id: parseInt(id),
+        ativo: ativoValue === 1
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// 9. Relatório de títulos vencidos
 const getTitulosVencidos = async (req, res, next) => {
   const empresaId = req.empresa_id;
   const requestingUser = req.user;
@@ -789,7 +853,7 @@ const getTitulosVencidos = async (req, res, next) => {
       `SELECT 
         t.id, t.numero_titulo, t.descricao, t.valor_total, t.valor_pago, 
         t.valor_restante, t.data_vencimento, t.status,
-        c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+        c.nome AS cliente_nome, c.ativo AS cliente_ativo, c.telefone AS cliente_telefone, c.ativo AS cliente_ativo,
         DATEDIFF(CURDATE(), t.data_vencimento) AS dias_vencimento
        FROM titulos t
        LEFT JOIN clientes_contas_prazo c ON t.cliente_contas_prazo_id = c.id
@@ -822,7 +886,7 @@ const getHistoricoCliente = async (req, res, next) => {
     // Buscar dados do cliente
     const [clienteRows] = await pool.query(
       `SELECT 
-        id, nome, telefone, email, endereco, data_cadastro
+        id, nome, telefone, email, endereco, data_cadastro, ativo
        FROM clientes_contas_prazo 
        WHERE id = ? AND empresa_id = ?`,
       [cliente_id, empresaId]
@@ -995,6 +1059,7 @@ module.exports = {
   getTitulosByCliente,
   createClienteRapido,
   searchClientes,
+  updateClienteStatus,
   getTitulosVencidos,
   getHistoricoCliente
 };

@@ -10,6 +10,7 @@ const {
   getTitulosByCliente,
   createClienteRapido,
   searchClientes,
+  updateClienteStatus,
   getTitulosVencidos,
   getHistoricoCliente
 } = require('../controllers/contasPrazoController');
@@ -92,6 +93,13 @@ router.get('/gerencial/:slug/contas-prazo/clientes/buscar',
   extractEmpresaId,
   authenticateToken,
   searchClientes
+);
+
+// PUT /api/v1/gerencial/:slug/contas-prazo/clientes/:id - Atualizar status do cliente (ativo/inativo)
+router.put('/gerencial/:slug/contas-prazo/clientes/:id', 
+  extractEmpresaId,
+  authenticateToken,
+  updateClienteStatus
 );
 
 // =====================================================
