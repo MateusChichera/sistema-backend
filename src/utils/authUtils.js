@@ -23,8 +23,8 @@ const comparePassword = async (password, hashedPassword) => {
 
 // Gera um token JWT
 const generateToken = (payload) => {
-  // O token expira em 1 hora para fins de demonstração
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
+  // O token expira em 2 horas
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '5h' });
 };
 
 // Verifica e decodifica um token JWT
