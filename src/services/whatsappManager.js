@@ -3,6 +3,16 @@ const P = require('pino');
 const path = require('path');
 const fs = require('fs');
 const QRCode = require('qrcode');
+const crypto = require('crypto');
+
+// Garantir que globalThis.crypto esteja disponível para o Baileys
+// No Node.js 15+, a Web Crypto API está disponível via crypto.webcrypto
+if (!globalThis.crypto) {
+  globalThis.crypto = crypto.webcrypto;
+} else if (!globalThis.crypto.subtle && crypto.webcrypto && crypto.webcrypto.subtle) {
+  // Se crypto existe mas não tem subtle, usar webcrypto do Node.js
+  globalThis.crypto.subtle = crypto.webcrypto.subtle;
+}
 
 // Variáveis para armazenar imports dinâmicos do Baileys (ES Module)
 let baileysModule = null;
