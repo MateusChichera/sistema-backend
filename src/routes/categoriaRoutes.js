@@ -26,6 +26,16 @@ router.get(
   categoriaController.getAllCategoriasByEmpresa
 );
 
+// Atualizar ordem das categorias: PUT /api/v1/gerencial/:slug/categorias/ordem
+// IMPORTANTE: Esta rota deve vir ANTES das rotas com :id para evitar conflito
+router.put(
+  '/gerencial/:slug/categorias/ordem',
+  extractEmpresaId,
+  authenticateToken,
+  authorizeRole(['Proprietario', 'Gerente']),
+  categoriaController.updateOrdemCategorias
+);
+
 // Obter categoria por ID: GET /api/v1/gerencial/:slug/categorias/:id
 router.get(
   '/gerencial/:slug/categorias/:id',
@@ -51,15 +61,6 @@ router.delete(
   authenticateToken,
   authorizeRole(['Proprietario', 'Gerente']),
   categoriaController.deleteCategoria
-);
-
-// Atualizar ordem das categorias: PUT /api/v1/gerencial/:slug/categorias/ordem
-router.put(
-  '/gerencial/:slug/categorias/ordem',
-  extractEmpresaId,
-  authenticateToken,
-  authorizeRole(['Proprietario', 'Gerente']),
-  categoriaController.updateOrdemCategorias
 );
 
 module.exports = router;
