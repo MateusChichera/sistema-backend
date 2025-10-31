@@ -1,5 +1,6 @@
 // backend/src/controllers/pedidoController.js
 const { pool } = require('../config/db');
+const whatsappNotificationService = require('../services/whatsappNotificationService');
 const { sendOrderConfirmationEmail } = require('../services/emailService');
 //const { io } = require('../utils/socket'); // Certifique-se de que `io` está configurado e exportado corretamente
 
@@ -287,6 +288,32 @@ const createPedido = async (req, res, next) => {
         // Emitir também para a sala do pedido (cliente acompanha)
         io.to(`pedido_${req.params.slug || req.body.slug}_${pedidoId}`).emit('pedidoUpdated', newPedidoData);
 
+        // Buscar telefone do cliente da tabela clientes para WhatsApp
+        let telefoneClienteParaWhatsApp = null;
+        if (clienteIdParaPedido) {
+            const [clienteRows] = await pool.query(
+                'SELECT telefone FROM clientes WHERE id = ? AND empresa_id = ?',
+                [clienteIdParaPedido, empresaId]
+            );
+            if (clienteRows.length > 0) {
+                telefoneClienteParaWhatsApp = clienteRows[0].telefone;
+            }
+        }
+
+        // Enviar notificação WhatsApp de novo pedido (async, não bloqueia resposta)
+        // Só envia se tiver telefone do cliente
+        if (telefoneClienteParaWhatsApp) {
+            whatsappNotificationService.notifyNewPedido(empresaId, {
+                id: pedidoId,
+                numero_pedido: numeroPedido,
+                nome_cliente: nomeClienteParaPedido,
+                telefone_cliente: telefoneClienteParaWhatsApp,
+                valor_total: valorTotal,
+                taxa_entrega: taxa_entrega || 0,
+                tipo_entrega: tipo_entrega
+            }).catch(err => console.error(`[WhatsApp ${empresaId}] Erro ao enviar notificação de novo pedido:`, err));
+        }
+
         res.status(201).json({
             message: 'Pedido criado com sucesso!',
             pedido: newPedidoData
@@ -502,6 +529,36 @@ const updatePedidoStatus = async (req, res, next) => {
 
         await connection.commit();
 
+        // Se status mudou para "Pronto", verificar se precisa criar rastreamento
+        if (status === 'Pronto') {
+          // Verificar se rastreamento está ativado
+          const [configRows] = await pool.query(
+            'SELECT whatsapp_rastreamento_pedido FROM config_empresa WHERE empresa_id = ?',
+            [empresaId]
+          );
+
+          const rastreamentoAtivado = configRows.length > 0 && configRows[0].whatsapp_rastreamento_pedido === 1;
+
+          if (rastreamentoAtivado) {
+            // Criar rastreamento se estiver ativado
+            const rastreamentoController = require('./rastreamentoController');
+            rastreamentoController.criarRastreamento(id, empresaId).catch(err =>
+              console.error(`[Rastreamento ${empresaId}] Erro ao criar rastreamento:`, err)
+            );
+            // NÃO enviar WhatsApp agora - será enviado quando motoboy iniciar entrega
+          } else {
+            // Se rastreamento NÃO está ativado, enviar WhatsApp normalmente
+            whatsappNotificationService.notifyPedidoStatusChange(empresaId, id, status).catch(err => 
+              console.error(`[WhatsApp ${empresaId}] Erro ao enviar notificação de status:`, err)
+            );
+          }
+        } else {
+          // Para outros status, enviar notificação normalmente
+          whatsappNotificationService.notifyPedidoStatusChange(empresaId, id, status).catch(err => 
+            console.error(`[WhatsApp ${empresaId}] Erro ao enviar notificação de status:`, err)
+          );
+        }
+
         // Re-buscar pedido completo para emitir o objeto atualizado
         const updatedPedido = await getFullPedidoDetails(connection, id, empresaId);
 
@@ -641,6 +698,12 @@ const finalizePedidoAndRegisterPayment = async (req, res, next) => {
             novoStatus = 'Entregue';
             let atualizarparcial = 0.0;
             await connection.query(`UPDATE pedidos SET status = ?, data_atualizacao = CURRENT_TIMESTAMP , valor_recebido_parcial = ?  WHERE id = ? AND empresa_id = ?`, [novoStatus,atualizarparcial, pedidoId, empresaId]);
+            
+            // Enviar notificação WhatsApp de mudança de status
+            // Quando status for "Pronto", a função já trata como "Saiu para Entrega" e usa a config correta
+            whatsappNotificationService.notifyPedidoStatusChange(empresaId, pedidoId, novoStatus).catch(err => 
+                console.error(`[WhatsApp ${empresaId}] Erro ao enviar notificação de status:`, err)
+            );
             
             // Se o status for 'Entregue' e for um pedido de MESA, liberar a mesa
             if (pedido.id_mesa) {

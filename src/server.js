@@ -35,6 +35,8 @@ const avisosCardapioRoutes = require('./routes/avisosCardapioRoutes');
 const contasPrazoRoutes = require('./routes/contasPrazoRoutes');
 const enderecoRoutes = require('./routes/enderecoRoutes');
 const comprovanteRoutes = require('./routes/comprovanteRoutes');
+const whatsappRoutes = require('./routes/whatsappRoutes');
+const rastreamentoRoutes = require('./routes/rastreamentoRoutes');
 
 dotenv.config();
 
@@ -98,6 +100,8 @@ app.use('/api/v1', categoriaRoutes);
 app.use('/api/v1', funcionarioRoutes);
 app.use('/api/v1', formaPagamentoRoutes);
 app.use('/api/v1', produtoRoutes);
+// Rotas de rastreamento ANTES das rotas de pedidos para evitar conflito
+app.use('/api/v1', rastreamentoRoutes);
 app.use('/api/v1', pedidoRoutes);
 app.use('/api/v1', cardapioPublicRoutes);
 app.use('/api/v1', mesasRoutes);
@@ -113,6 +117,7 @@ app.use('/api/v1', avisosCardapioRoutes);
 app.use('/api/v1', contasPrazoRoutes);
 app.use('/api/v1', enderecoRoutes);
 app.use('/api/v1', comprovanteRoutes);
+app.use('/api/v1', whatsappRoutes);
 
 app.use('/api/v1', testRoutes);
 

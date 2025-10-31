@@ -20,7 +20,9 @@ const getConfigBySlug = async (req, res, next) => {
           ce.layout_cardapio, ce.alerta_estoque_baixo_ativo, ce.limite_estoque_baixo,
           ce.enviar_email_confirmacao, ce.som_notificacao_cozinha, ce.som_notificacao_delivery,
           ce.valor_inicial_caixa_padrao, ce.exibir_valores_fechamento_caixa, ce.usa_controle_caixa,ce.porcentagem_garcom,ce.permitir_acompanhar_status,
-          ce.permitir_pedidos_estoque_zerado, ce.nao_mostrar_cardapio_estoque_zerado
+          ce.permitir_pedidos_estoque_zerado, ce.nao_mostrar_cardapio_estoque_zerado,
+          ce.whatsapp_enviar_novo_pedido, ce.whatsapp_enviar_status_pedido, ce.whatsapp_enviar_saiu_entrega,
+          ce.whatsapp_rastreamento_pedido
        FROM empresas e
        LEFT JOIN config_empresa ce ON e.id = ce.empresa_id
        WHERE e.id = ?`,
@@ -120,7 +122,8 @@ const updateConfig = async (req, res, next) => {
     enviar_email_confirmacao, som_notificacao_cozinha, som_notificacao_delivery,
     valor_inicial_caixa_padrao, exibir_valores_fechamento_caixa, usa_controle_caixa,porcentagem_garcom,permitir_acompanhar_status,
     permitir_pedidos_estoque_zerado, nao_mostrar_cardapio_estoque_zerado,
-    juros_titulos
+    whatsapp_enviar_novo_pedido, whatsapp_enviar_status_pedido, whatsapp_enviar_saiu_entrega,
+    whatsapp_rastreamento_pedido, juros_titulos
   } = req.body;
   const requestingUserRole = req.user.role;
 
@@ -140,7 +143,9 @@ const updateConfig = async (req, res, next) => {
         layout_cardapio = ?, alerta_estoque_baixo_ativo = ?, limite_estoque_baixo = ?,
         enviar_email_confirmacao = ?, som_notificacao_cozinha = ?, som_notificacao_delivery = ?,
         valor_inicial_caixa_padrao = ?, exibir_valores_fechamento_caixa = ?, usa_controle_caixa = ?,porcentagem_garcom = ?,permitir_acompanhar_status = ?,
-        permitir_pedidos_estoque_zerado = ?, nao_mostrar_cardapio_estoque_zerado = ?
+        permitir_pedidos_estoque_zerado = ?, nao_mostrar_cardapio_estoque_zerado = ?,
+        whatsapp_enviar_novo_pedido = ?, whatsapp_enviar_status_pedido = ?, whatsapp_enviar_saiu_entrega = ?,
+        whatsapp_rastreamento_pedido = ?
        WHERE empresa_id = ?`,
       [
         horario_funcionamento, parseInt(numero_mesas) || 0, parseFloat(taxa_entrega) || 0.00,
@@ -153,7 +158,8 @@ const updateConfig = async (req, res, next) => {
         parseFloat(valor_inicial_caixa_padrao) || 0.00, exibir_valores_fechamento_caixa, usa_controle_caixa,porcentagem_garcom,
         permitir_acompanhar_status,
         permitir_pedidos_estoque_zerado, nao_mostrar_cardapio_estoque_zerado,
-        empresaId
+        whatsapp_enviar_novo_pedido || 0, whatsapp_enviar_status_pedido || 0, whatsapp_enviar_saiu_entrega || 0,
+        whatsapp_rastreamento_pedido || 0, empresaId
       ]
     );
 
