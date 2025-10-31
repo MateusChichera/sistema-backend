@@ -1,9 +1,32 @@
 // Serviço para gerenciar múltiplas sessões WhatsApp (Baileys) por empresa
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const P = require('pino');
 const path = require('path');
 const fs = require('fs');
 const QRCode = require('qrcode');
+
+// Variáveis para armazenar imports dinâmicos do Baileys (ES Module)
+let baileysModule = null;
+let makeWASocket = null;
+let DisconnectReason = null;
+let useMultiFileAuthState = null;
+let fetchLatestBaileysVersion = null;
+
+// Carregar módulo Baileys dinamicamente
+async function loadBaileys() {
+  if (!baileysModule) {
+    baileysModule = await import('@whiskeysockets/baileys');
+    makeWASocket = baileysModule.default;
+    DisconnectReason = baileysModule.DisconnectReason;
+    useMultiFileAuthState = baileysModule.useMultiFileAuthState;
+    fetchLatestBaileysVersion = baileysModule.fetchLatestBaileysVersion;
+  }
+  return {
+    makeWASocket,
+    DisconnectReason,
+    useMultiFileAuthState,
+    fetchLatestBaileysVersion
+  };
+}
 
 class WhatsAppManager {
   constructor() {
@@ -28,6 +51,10 @@ class WhatsAppManager {
   // Inicializar conexão WhatsApp para uma empresa
   async connectEmpresa(empresaId) {
     try {
+      // Carregar módulo Baileys dinamicamente
+      const baileys = await loadBaileys();
+      const { makeWASocket: makeSocket, useMultiFileAuthState: useAuth, fetchLatestBaileysVersion: fetchVersion, DisconnectReason: Disconnect } = baileys;
+
       // Se já existe uma sessão ativa, retorna o status
       if (this.sessions.has(empresaId)) {
         const socket = this.sessions.get(empresaId);
@@ -42,14 +69,14 @@ class WhatsAppManager {
       }
 
       const authPath = this.getAuthPath(empresaId);
-      const { state, saveCreds } = await useMultiFileAuthState(authPath);
+      const { state, saveCreds } = await useAuth(authPath);
 
       // Atualizar versão do Baileys
-      const { version } = await fetchLatestBaileysVersion();
+      const { version } = await fetchVersion();
       console.log(`[WhatsApp ${empresaId}] Usando versão Baileys:`, version);
 
       // Criar socket WhatsApp
-      const socket = makeWASocket({
+      const socket = makeSocket({
         version,
         printQRInTerminal: false, // Não imprimir QR no terminal, vamos usar API
         auth: state,
@@ -100,8 +127,9 @@ class WhatsAppManager {
 
         if (connection === 'close') {
           // Conexão fechada
+          const baileys = await loadBaileys();
           const statusCode = lastDisconnect?.error?.output?.statusCode;
-          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+          const shouldReconnect = statusCode !== baileys.DisconnectReason.loggedOut;
           
           this.sessions.delete(empresaId);
           this.sessionStatus.set(empresaId, {
