@@ -3,6 +3,45 @@ const P = require('pino');
 const path = require('path');
 const fs = require('fs');
 const QRCode = require('qrcode');
+const crypto = require('crypto');
+
+// ============================================
+// Configuração crítica: globalThis.crypto para Baileys
+// ============================================
+// O Baileys requer globalThis.crypto.subtle para funcionar
+// Esta configuração DEVE estar ANTES de importar o Baileys
+// Versões do Node.js 15+ têm crypto.webcrypto disponível
+
+// Configurar globalThis.crypto ANTES de importar Baileys
+if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.subtle) {
+  // Node.js 15+ tem crypto.webcrypto disponível
+  if (crypto.webcrypto) {
+    // Usar webcrypto do Node.js diretamente
+    globalThis.crypto = crypto.webcrypto;
+    console.log('[WhatsApp] ✅ globalThis.crypto configurado via crypto.webcrypto');
+  } else {
+    // Fallback: tentar criar objeto crypto básico
+    console.error('[WhatsApp] ⚠️ crypto.webcrypto não disponível! Node.js:', process.version);
+    
+    // Tentar verificar se está disponível em outra forma
+    if (crypto && typeof crypto.webcrypto !== 'undefined') {
+      globalThis.crypto = crypto.webcrypto;
+      console.log('[WhatsApp] ✅ globalThis.crypto configurado (método alternativo)');
+    } else {
+      console.error('[WhatsApp] ❌ Não foi possível configurar globalThis.crypto!');
+      console.error('[WhatsApp] Verifique se o Node.js é versão 15 ou superior');
+    }
+  }
+}
+
+// Verificação final e log
+if (globalThis.crypto && globalThis.crypto.subtle) {
+  console.log('[WhatsApp] ✅ crypto.subtle disponível - Baileys deve funcionar');
+} else {
+  console.error('[WhatsApp] ❌ ERRO: crypto.subtle não está disponível!');
+  console.error('[WhatsApp] Node.js versão:', process.version);
+  console.error('[WhatsApp] Isso pode causar erro ao conectar WhatsApp');
+}
 
 // Variáveis para armazenar imports dinâmicos do Baileys (ES Module)
 let baileysModule = null;
