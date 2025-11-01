@@ -103,12 +103,11 @@ const createPedido = async (req, res, next) => {
         formapagamento,
         taxa_entrega,
         nome_cliente_mesa,
-        endereco_entrega, complemento_entrega, numero_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega,
-        latitude_destino, longitude_destino, // Coordenadas do destino do pedido
-        latitude_entrega, longitude_entrega, // Alternativos
-        endereco_latitude, endereco_longitude, // Alternativos
-        lat_destino, lng_destino // Alternativos (formato curto)
+        endereco_entrega, complemento_entrega, numero_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega
     } = req.body;
+    
+    // Importar serviço de geocoding
+    const geocodingService = require('../services/geocodingService');
 
     const empresaId = req.empresa_id;
     const requestingUser = req.user;
@@ -184,9 +183,54 @@ const createPedido = async (req, res, next) => {
         // 1. Inserir o pedido principal
         const numeroPedido = await generateNumeroPedido(empresaId); // Utiliza a nova função
         
-        // Preparar coordenadas do destino (prioridade: latitude_destino > latitude_entrega > endereco_latitude > lat_destino)
-        const coordLat = latitude_destino || latitude_entrega || endereco_latitude || lat_destino || null;
-        const coordLng = longitude_destino || longitude_entrega || endereco_longitude || lng_destino || null;
+        // Fazer geocoding do endereço para obter coordenadas (apenas para delivery)
+        let latDestinoFinal = null;
+        let lngDestinoFinal = null;
+        
+        if (tipo_entrega === 'Delivery' && endereco_entrega) {
+            console.log('[Pedido] 📍 Fazendo geocoding do endereço de entrega...');
+            
+            // Log para debug - verificar o que está chegando
+            console.log('[Pedido] 📍 Dados do endereço recebidos:', {
+                endereco_entrega: endereco_entrega || 'null',
+                numero_entrega: numero_entrega || 'null',
+                complemento_entrega: complemento_entrega || 'null',
+                bairro_entrega: bairro_entrega || 'null',
+                cidade_entrega: cidade_entrega || 'null',
+                estado_entrega: estado_entrega || 'null',
+                cep_entrega: cep_entrega || 'null'
+            });
+            
+            try {
+                const coordenadas = await geocodingService.geocodeEnderecoCompleto({
+                    endereco_entrega,
+                    numero_entrega,
+                    complemento_entrega,
+                    bairro_entrega,
+                    cidade_entrega,
+                    estado_entrega,
+                    cep_entrega
+                });
+                
+                latDestinoFinal = coordenadas.latitude;
+                lngDestinoFinal = coordenadas.longitude;
+                
+                if (latDestinoFinal && lngDestinoFinal) {
+                    console.log(`[Pedido] ✅ Coordenadas obtidas via geocoding: ${latDestinoFinal}, ${lngDestinoFinal}`);
+                } else {
+                    console.log('[Pedido] ⚠️ Não foi possível obter coordenadas via geocoding');
+                }
+            } catch (error) {
+                console.error('[Pedido] Erro ao fazer geocoding:', error);
+                // Continua mesmo se geocoding falhar
+            }
+        } else {
+            if (tipo_entrega !== 'Delivery') {
+                console.log('[Pedido] ℹ️ Tipo de entrega não é Delivery, geocoding não necessário');
+            } else if (!endereco_entrega) {
+                console.log('[Pedido] ⚠️ Endereço de entrega não informado');
+            }
+        }
         
         const [pedidoResult] = await connection.query(
             `INSERT INTO pedidos (
@@ -197,12 +241,20 @@ const createPedido = async (req, res, next) => {
             [
                 empresaId, numeroPedido, id_mesa || null, clienteIdParaPedido || null, nomeClienteParaPedido || null, tipo_entrega, 'Pendente', observacoes || null, idFuncionarioLogado,
                 endereco_entrega || null, complemento_entrega || null, numero_entrega || null, bairro_entrega || null, cidade_entrega || null, estado_entrega || null, cep_entrega || null, troco || 0.0, formapagamento || null, taxa_entrega || 0.0,
-                coordLat ? parseFloat(coordLat) : null, coordLng ? parseFloat(coordLng) : null, // latitude_destino, longitude_destino
-                latitude_entrega ? parseFloat(latitude_entrega) : null, longitude_entrega ? parseFloat(longitude_entrega) : null, // Alternativos
-                endereco_latitude ? parseFloat(endereco_latitude) : null, endereco_longitude ? parseFloat(endereco_longitude) : null, // Alternativos
-                lat_destino ? parseFloat(lat_destino) : null, lng_destino ? parseFloat(lng_destino) : null // Alternativos (formato curto)
+                latDestinoFinal, lngDestinoFinal, // latitude_destino, longitude_destino
+                null, // latitude_entrega (mantido para compatibilidade)
+                null, // longitude_entrega (mantido para compatibilidade)
+                null, // endereco_latitude (mantido para compatibilidade)
+                null, // endereco_longitude (mantido para compatibilidade)
+                null, // lat_destino (mantido para compatibilidade)
+                null  // lng_destino (mantido para compatibilidade)
             ]
         );
+        
+        // Log para verificar se salvou
+        if (latDestinoFinal || lngDestinoFinal) {
+            console.log(`[Pedido] Pedido criado com ID ${pedidoResult.insertId} - Coordenadas salvas: Lat=${latDestinoFinal}, Lng=${lngDestinoFinal}`);
+        }
         const pedidoId = pedidoResult.insertId;
 
         // 2. Inserir os itens do pedido e calcular o valor total
