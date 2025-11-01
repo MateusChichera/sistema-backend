@@ -2,6 +2,27 @@
 const { pool } = require('../config/db');
 const whatsappNotificationService = require('../services/whatsappNotificationService');
 
+// Função auxiliar para obter coordenadas do destino do pedido
+const getCoordenadasDestino = (pedido) => {
+  // Prioridade: latitude_destino > latitude_entrega > endereco_latitude > lat_destino
+  const latitudeDestino = pedido?.latitude_destino || 
+                          pedido?.latitude_entrega || 
+                          pedido?.endereco_latitude || 
+                          pedido?.lat_destino || 
+                          null;
+  
+  const longitudeDestino = pedido?.longitude_destino || 
+                           pedido?.longitude_entrega || 
+                           pedido?.endereco_longitude || 
+                           pedido?.lng_destino || 
+                           null;
+
+  return {
+    latitude_destino: latitudeDestino ? parseFloat(latitudeDestino) : null,
+    longitude_destino: longitudeDestino ? parseFloat(longitudeDestino) : null
+  };
+};
+
 // Criar rastreamento quando pedido muda para "Pronto" (se rastreamento ativado)
 const criarRastreamento = async (pedidoId, empresaId) => {
   try {
@@ -31,7 +52,9 @@ const criarRastreamento = async (pedidoId, empresaId) => {
 // Iniciar rastreamento (motoboy inicia entrega)
 const iniciarRastreamento = async (req, res, next) => {
   const { id } = req.params; // pedido_id
+  const { slug } = req.params; // slug da empresa
   const empresaId = req.empresa_id;
+  const io = req.io; // Instância do Socket.IO
 
   try {
     // Buscar rastreamento
@@ -60,6 +83,47 @@ const iniciarRastreamento = async (req, res, next) => {
        WHERE id = ?`,
       [rastreamento.id]
     );
+
+    // Buscar rastreamento atualizado para emitir via Socket.IO
+    // Usando COALESCE para garantir compatibilidade caso campos não existam ainda
+    const [rastreamentoAtualizado] = await pool.query(
+      `SELECT r.*, 
+              p.numero_pedido,
+              COALESCE(p.latitude_destino, p.latitude_entrega, p.endereco_latitude, p.lat_destino) as latitude_destino,
+              COALESCE(p.longitude_destino, p.longitude_entrega, p.endereco_longitude, p.lng_destino) as longitude_destino,
+              p.latitude_entrega,
+              p.longitude_entrega,
+              p.endereco_latitude,
+              p.endereco_longitude,
+              p.lat_destino,
+              p.lng_destino
+       FROM rastreamento_entrega r
+       JOIN pedidos p ON r.pedido_id = p.id
+       WHERE r.id = ?`,
+      [rastreamento.id]
+    );
+
+    const rastreamentoCompleto = rastreamentoAtualizado[0] || rastreamento;
+    const coordenadasDestino = getCoordenadasDestino(rastreamentoCompleto);
+
+    // Emitir evento Socket.IO para a sala do rastreamento público
+    if (io && slug) {
+      const room = `rastreamento:${slug}:pedido:${id}`;
+      io.to(room).emit('rastreamento_updated', {
+        rastreamento: {
+          id: rastreamentoCompleto.id,
+          status: 'em_entrega',
+          latitude: rastreamentoCompleto.latitude,
+          longitude: rastreamentoCompleto.longitude,
+          latitude_destino: coordenadasDestino.latitude_destino,
+          longitude_destino: coordenadasDestino.longitude_destino,
+          data_inicio: rastreamentoCompleto.data_inicio,
+          numero_pedido: rastreamentoCompleto.numero_pedido
+        },
+        pedidoId: parseInt(id)
+      });
+      console.log(`[Socket] Evento emitido para sala ${room}: rastreamento_updated (iniciado)`);
+    }
 
     // Buscar dados do pedido para enviar WhatsApp
     const [pedidoRows] = await pool.query(
@@ -104,8 +168,10 @@ const iniciarRastreamento = async (req, res, next) => {
 // Atualizar localização do motoboy
 const atualizarLocalizacao = async (req, res, next) => {
   const { id } = req.params; // pedido_id
+  const { slug } = req.params; // slug da empresa
   const { latitude, longitude } = req.body;
   const empresaId = req.empresa_id;
+  const io = req.io; // Instância do Socket.IO
 
   try {
     if (!latitude || !longitude) {
@@ -151,6 +217,18 @@ const atualizarLocalizacao = async (req, res, next) => {
       [rastreamentoId, parseFloat(latitude), parseFloat(longitude)]
     );
 
+    // Emitir evento Socket.IO para a sala do rastreamento público
+    if (io && slug) {
+      const room = `rastreamento:${slug}:pedido:${id}`;
+      io.to(room).emit('localizacao_updated', {
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+        pedidoId: parseInt(id),
+        timestamp: new Date().toISOString()
+      });
+      console.log(`[Socket] Evento emitido para sala ${room}: localizacao_updated`);
+    }
+
     res.status(200).json({
       message: 'Localização atualizada com sucesso',
       localizacao: {
@@ -169,8 +247,10 @@ const atualizarLocalizacao = async (req, res, next) => {
 // Marcar como entregue (motoboy entrega pedido)
 const marcarEntregue = async (req, res, next) => {
   const { id } = req.params; // pedido_id
+  const { slug } = req.params; // slug da empresa
   const { observacoes } = req.body;
   const empresaId = req.empresa_id;
+  const io = req.io; // Instância do Socket.IO
 
   try {
     // Buscar rastreamento
@@ -199,6 +279,48 @@ const marcarEntregue = async (req, res, next) => {
        WHERE id = ?`,
       [observacoes || null, rastreamento.id]
     );
+
+    // Buscar rastreamento atualizado para emitir via Socket.IO
+    // Usando COALESCE para garantir compatibilidade caso campos não existam ainda
+    const [rastreamentoAtualizado] = await pool.query(
+      `SELECT r.*, 
+              p.numero_pedido,
+              COALESCE(p.latitude_destino, p.latitude_entrega, p.endereco_latitude, p.lat_destino) as latitude_destino,
+              COALESCE(p.longitude_destino, p.longitude_entrega, p.endereco_longitude, p.lng_destino) as longitude_destino,
+              p.latitude_entrega,
+              p.longitude_entrega,
+              p.endereco_latitude,
+              p.endereco_longitude,
+              p.lat_destino,
+              p.lng_destino
+       FROM rastreamento_entrega r
+       JOIN pedidos p ON r.pedido_id = p.id
+       WHERE r.id = ?`,
+      [rastreamento.id]
+    );
+
+    const rastreamentoCompleto = rastreamentoAtualizado[0] || rastreamento;
+    const coordenadasDestino = getCoordenadasDestino(rastreamentoCompleto);
+
+    // Emitir evento Socket.IO para a sala do rastreamento público
+    if (io && slug) {
+      const room = `rastreamento:${slug}:pedido:${id}`;
+      io.to(room).emit('rastreamento_updated', {
+        rastreamento: {
+          id: rastreamentoCompleto.id,
+          status: 'entregue',
+          latitude: rastreamentoCompleto.latitude,
+          longitude: rastreamentoCompleto.longitude,
+          latitude_destino: coordenadasDestino.latitude_destino,
+          longitude_destino: coordenadasDestino.longitude_destino,
+          data_inicio: rastreamentoCompleto.data_inicio,
+          data_entrega: rastreamentoCompleto.data_entrega,
+          numero_pedido: rastreamentoCompleto.numero_pedido
+        },
+        pedidoId: parseInt(id)
+      });
+      console.log(`[Socket] Evento emitido para sala ${room}: rastreamento_updated (entregue)`);
+    }
 
     // Buscar dados do pedido para enviar WhatsApp
     const [pedidoRows] = await pool.query(
@@ -268,9 +390,22 @@ const getStatusRastreamento = async (req, res, next) => {
 
     const empresaId = empresaRows[0].id;
 
-    // Buscar rastreamento
+    // Buscar rastreamento com coordenadas do destino do pedido
+    // Usando COALESCE para garantir compatibilidade caso campos não existam ainda
     const [rastreamentoRows] = await pool.query(
-      `SELECT r.*, p.numero_pedido, p.endereco_entrega, p.complemento_entrega, p.numero_entrega
+      `SELECT r.*, 
+              p.numero_pedido, 
+              p.endereco_entrega, 
+              p.complemento_entrega, 
+              p.numero_entrega,
+              COALESCE(p.latitude_destino, p.latitude_entrega, p.endereco_latitude, p.lat_destino) as latitude_destino,
+              COALESCE(p.longitude_destino, p.longitude_entrega, p.endereco_longitude, p.lng_destino) as longitude_destino,
+              p.latitude_entrega,
+              p.longitude_entrega,
+              p.endereco_latitude,
+              p.endereco_longitude,
+              p.lat_destino,
+              p.lng_destino
        FROM rastreamento_entrega r
        JOIN pedidos p ON r.pedido_id = p.id
        WHERE r.pedido_id = ? AND r.empresa_id = ?`,
@@ -282,6 +417,19 @@ const getStatusRastreamento = async (req, res, next) => {
     }
 
     const rastreamento = rastreamentoRows[0];
+
+    // Obter coordenadas do destino (prioridade: latitude_destino > latitude_entrega > endereco_latitude > lat_destino)
+    const latitudeDestino = rastreamento.latitude_destino || 
+                            rastreamento.latitude_entrega || 
+                            rastreamento.endereco_latitude || 
+                            rastreamento.lat_destino || 
+                            null;
+    
+    const longitudeDestino = rastreamento.longitude_destino || 
+                             rastreamento.longitude_entrega || 
+                             rastreamento.endereco_longitude || 
+                             rastreamento.lng_destino || 
+                             null;
 
     // Buscar últimas 20 localizações do histórico
     const [localizacoes] = await pool.query(
@@ -299,8 +447,10 @@ const getStatusRastreamento = async (req, res, next) => {
         pedido_id: parseInt(id),
         numero_pedido: rastreamento.numero_pedido,
         status: rastreamento.status,
-        latitude: rastreamento.latitude,
-        longitude: rastreamento.longitude,
+        latitude: rastreamento.latitude, // Coordenadas do MOTOBOY
+        longitude: rastreamento.longitude, // Coordenadas do MOTOBOY
+        latitude_destino: latitudeDestino ? parseFloat(latitudeDestino) : null, // Coordenadas do DESTINO (PEDIDO)
+        longitude_destino: longitudeDestino ? parseFloat(longitudeDestino) : null, // Coordenadas do DESTINO (PEDIDO)
         data_inicio: rastreamento.data_inicio,
         data_entrega: rastreamento.data_entrega,
         endereco_entrega: rastreamento.endereco_entrega,

@@ -1,5 +1,52 @@
-node_modules
+# Dependências
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+# package-lock.json deve ser versionado (não ignorar)
+
+# Variáveis de ambiente
 .env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Logs
 *.log
+logs/
+*.log.*
+
+# Arquivos de IDE
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Arquivos de autenticação WhatsApp
 whatsapp_auth/
+whatsapp_auth/*
+
+# Arquivos temporários
+*.tmp
+*.temp
+.cache/
+
+# Build / Dist
+dist/
+build/
+*.tsbuildinfo
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Uploads (manter estrutura, mas ignorar arquivos grandes)
+public/uploads/*
+!public/uploads/.gitkeep
+
+# Arquivos do sistema
+Thumbs.db
+.DS_Store

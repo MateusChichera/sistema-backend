@@ -3,16 +3,6 @@ const P = require('pino');
 const path = require('path');
 const fs = require('fs');
 const QRCode = require('qrcode');
-const crypto = require('crypto');
-
-// Garantir que globalThis.crypto esteja disponível para o Baileys
-// No Node.js 15+, a Web Crypto API está disponível via crypto.webcrypto
-if (!globalThis.crypto) {
-  globalThis.crypto = crypto.webcrypto;
-} else if (!globalThis.crypto.subtle && crypto.webcrypto && crypto.webcrypto.subtle) {
-  // Se crypto existe mas não tem subtle, usar webcrypto do Node.js
-  globalThis.crypto.subtle = crypto.webcrypto.subtle;
-}
 
 // Variáveis para armazenar imports dinâmicos do Baileys (ES Module)
 let baileysModule = null;
@@ -35,6 +25,46 @@ async function loadBaileys() {
     DisconnectReason,
     useMultiFileAuthState,
     fetchLatestBaileysVersion
+  };
+}
+
+// Filtrar erros comuns de descriptografia do WhatsApp (não críticos)
+let errorFilterInitialized = false;
+function initializeErrorFilter() {
+  if (errorFilterInitialized) return;
+  errorFilterInitialized = true;
+
+  // Interceptar console.error para filtrar erros de Bad MAC
+  const originalError = console.error;
+  console.error = function(...args) {
+    const message = args.join(' ');
+    // Filtrar erros conhecidos e não críticos de descriptografia
+    if (message.includes('Bad MAC') || 
+        message.includes('Failed to decrypt message') ||
+        message.includes('Failed to decrypt message with any known session') ||
+        (message.includes('Session error') && message.includes('Bad MAC'))) {
+      // Suprimir esses erros - são esperados e não afetam funcionalidade
+      // São comuns quando mensagens antigas chegam ou há problemas de sincronização de sessão
+      return;
+    }
+    // Para outros erros, manter comportamento padrão
+    originalError.apply(console, args);
+  };
+  
+  // Também interceptar process.stderr para capturar erros do libsignal
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = function(chunk, encoding, fd) {
+    const message = chunk.toString();
+    // Filtrar erros conhecidos de descriptografia
+    if (message.includes('Bad MAC') || 
+        message.includes('Failed to decrypt message') ||
+        message.includes('Failed to decrypt message with any known session') ||
+        (message.includes('Session error') && message.includes('Bad MAC'))) {
+      // Suprimir esses erros específicos
+      return true;
+    }
+    // Para outros erros, manter comportamento padrão
+    return originalStderrWrite(chunk, encoding, fd);
   };
 }
 
@@ -61,6 +91,9 @@ class WhatsAppManager {
   // Inicializar conexão WhatsApp para uma empresa
   async connectEmpresa(empresaId) {
     try {
+      // Inicializar filtro de erros (apenas uma vez)
+      initializeErrorFilter();
+      
       // Carregar módulo Baileys dinamicamente
       const baileys = await loadBaileys();
       const { makeWASocket: makeSocket, useMultiFileAuthState: useAuth, fetchLatestBaileysVersion: fetchVersion, DisconnectReason: Disconnect } = baileys;

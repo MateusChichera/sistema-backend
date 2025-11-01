@@ -147,6 +147,32 @@ io.on('connection', (socket) => {
       console.log(`Socket.IO: Cliente ${socket.id} entrou na sala do pedido ${roomName}`);
     }
   });
+
+  // ============================================
+  // Eventos Socket.IO - Rastreamento Público
+  // ============================================
+
+  // Cliente entra na sala do rastreamento público
+  // Espera receber: { slug, pedidoId }
+  socket.on('join_rastreamento_room', ({ slug, pedidoId }) => {
+    if (slug && pedidoId) {
+      const roomName = `rastreamento:${slug}:pedido:${pedidoId}`;
+      socket.join(roomName);
+      console.log(`[Socket] Cliente ${socket.id} entrou na sala ${roomName}`);
+    } else {
+      console.warn(`[Socket] join_rastreamento_room inválido - slug: ${slug}, pedidoId: ${pedidoId}`);
+    }
+  });
+
+  // Cliente sai da sala do rastreamento público
+  // Espera receber: { slug, pedidoId }
+  socket.on('leave_rastreamento_room', ({ slug, pedidoId }) => {
+    if (slug && pedidoId) {
+      const roomName = `rastreamento:${slug}:pedido:${pedidoId}`;
+      socket.leave(roomName);
+      console.log(`[Socket] Cliente ${socket.id} saiu da sala ${roomName}`);
+    }
+  });
 });
 
 

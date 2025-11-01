@@ -103,7 +103,11 @@ const createPedido = async (req, res, next) => {
         formapagamento,
         taxa_entrega,
         nome_cliente_mesa,
-        endereco_entrega, complemento_entrega, numero_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega
+        endereco_entrega, complemento_entrega, numero_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega,
+        latitude_destino, longitude_destino, // Coordenadas do destino do pedido
+        latitude_entrega, longitude_entrega, // Alternativos
+        endereco_latitude, endereco_longitude, // Alternativos
+        lat_destino, lng_destino // Alternativos (formato curto)
     } = req.body;
 
     const empresaId = req.empresa_id;
@@ -179,14 +183,24 @@ const createPedido = async (req, res, next) => {
 
         // 1. Inserir o pedido principal
         const numeroPedido = await generateNumeroPedido(empresaId); // Utiliza a nova função
+        
+        // Preparar coordenadas do destino (prioridade: latitude_destino > latitude_entrega > endereco_latitude > lat_destino)
+        const coordLat = latitude_destino || latitude_entrega || endereco_latitude || lat_destino || null;
+        const coordLng = longitude_destino || longitude_entrega || endereco_longitude || lng_destino || null;
+        
         const [pedidoResult] = await connection.query(
             `INSERT INTO pedidos (
                 empresa_id, numero_pedido, id_mesa, id_cliente, nome_cliente_convidado, tipo_entrega, status, observacoes, id_funcionario,
-                endereco_entrega, complemento_entrega, numero_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega,troco,formapagamento,taxa_entrega
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?)`,
+                endereco_entrega, complemento_entrega, numero_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega, troco, formapagamento, taxa_entrega,
+                latitude_destino, longitude_destino, latitude_entrega, longitude_entrega, endereco_latitude, endereco_longitude, lat_destino, lng_destino
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 empresaId, numeroPedido, id_mesa || null, clienteIdParaPedido || null, nomeClienteParaPedido || null, tipo_entrega, 'Pendente', observacoes || null, idFuncionarioLogado,
-                endereco_entrega || null, complemento_entrega || null, numero_entrega || null, bairro_entrega || null, cidade_entrega || null, estado_entrega || null, cep_entrega || null , troco || 0.0 , formapagamento || null , taxa_entrega || 0.0
+                endereco_entrega || null, complemento_entrega || null, numero_entrega || null, bairro_entrega || null, cidade_entrega || null, estado_entrega || null, cep_entrega || null, troco || 0.0, formapagamento || null, taxa_entrega || 0.0,
+                coordLat ? parseFloat(coordLat) : null, coordLng ? parseFloat(coordLng) : null, // latitude_destino, longitude_destino
+                latitude_entrega ? parseFloat(latitude_entrega) : null, longitude_entrega ? parseFloat(longitude_entrega) : null, // Alternativos
+                endereco_latitude ? parseFloat(endereco_latitude) : null, endereco_longitude ? parseFloat(endereco_longitude) : null, // Alternativos
+                lat_destino ? parseFloat(lat_destino) : null, lng_destino ? parseFloat(lng_destino) : null // Alternativos (formato curto)
             ]
         );
         const pedidoId = pedidoResult.insertId;
