@@ -6,6 +6,8 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const cors = require('cors');
 
 const http = require('http'); // Importa o módulo HTTP
+const https = require('https'); // Importa o módulo HTTPS
+const fs = require('fs'); // Para ler certificados SSL
 const { Server } = require('socket.io'); // Importa o Server do socket.io
 
 const { testConnection } = require('./config/db');
@@ -41,8 +43,57 @@ const rastreamentoRoutes = require('./routes/rastreamentoRoutes');
 dotenv.config();
 
 const app = express();
-const server = http.createServer(app); // Cria um servidor HTTP a partir do app Express
-const io = new Server(server, { // Anexa o Socket.IO ao servidor HTTP
+
+// ============================================
+// Configuração SSL/HTTPS
+// ============================================
+let httpsOptions = null;
+const sslCertPath = process.env.SSL_CERT_PATH || '/etc/letsencrypt/live/athospp.com.br';
+const sslKeyPath = path.join(sslCertPath, 'privkey.pem');
+const sslCertFilePath = path.join(sslCertPath, 'fullchain.pem');
+
+// Verificar se os certificados SSL estão disponíveis
+try {
+  if (fs.existsSync(sslKeyPath) && fs.existsSync(sslCertFilePath)) {
+    httpsOptions = {
+      key: fs.readFileSync(sslKeyPath, 'utf8'),
+      cert: fs.readFileSync(sslCertFilePath, 'utf8')
+    };
+    console.log('✅ Certificados SSL encontrados - HTTPS será habilitado');
+  } else {
+    console.log('⚠️ Certificados SSL não encontrados - Apenas HTTP será usado');
+    console.log(`   Procurando em: ${sslCertPath}`);
+  }
+} catch (error) {
+  console.log('⚠️ Erro ao carregar certificados SSL - Apenas HTTP será usado');
+  console.log(`   Erro: ${error.message}`);
+}
+
+// ============================================
+// Criar servidores HTTP e HTTPS
+// ============================================
+const httpServer = http.createServer(app); // Servidor HTTP
+let httpsServer = null; // Servidor HTTPS (criado apenas se certificados estiverem disponíveis)
+
+const port = process.env.PORT || 3001;
+const httpsPort = process.env.HTTPS_PORT || 3002;
+
+// Criar servidor HTTPS se certificados estiverem disponíveis
+if (httpsOptions) {
+  try {
+    httpsServer = https.createServer(httpsOptions, app);
+    console.log('✅ Servidor HTTPS criado com sucesso');
+  } catch (error) {
+    console.error('❌ Erro ao criar servidor HTTPS:', error.message);
+    httpsServer = null;
+  }
+}
+
+// ============================================
+// Configurar Socket.IO
+// ============================================
+// Socket.IO será anexado aos servidores HTTP e HTTPS
+const io = new Server(httpServer, { // Socket.IO no servidor HTTP
   cors: {
     origin: [
       'http://localhost:5173',
@@ -61,7 +112,28 @@ const io = new Server(server, { // Anexa o Socket.IO ao servidor HTTP
   }
 });
 
-const port = process.env.PORT || 3001;
+// Se servidor HTTPS estiver disponível, criar instância do Socket.IO para HTTPS também
+let ioHttps = null;
+if (httpsServer) {
+  ioHttps = new Server(httpsServer, {
+    cors: {
+      origin: [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://localhost:3000', 
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:5174',
+        'http://212.85.23.251:5173',
+        'http://212.85.23.251:3000',
+        'https://athospp.com.br',
+        'http://athospp.com.br'
+      ],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: true
+    }
+  });
+}
 
 // Middlewares
 // Configuração de CORS simples para desenvolvimento
@@ -82,8 +154,35 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // Middleware para injetar 'io' (socket.io) no objeto de requisição
+// Cria um objeto que permite usar ambos os sockets (HTTP e HTTPS) para broadcast
+// Mantém compatibilidade com código existente que usa req.io.to(room).emit(event, data)
 app.use((req, res, next) => {
-  req.io = io;
+  // Criar objeto que permite broadcast em ambos os servidores (HTTP e HTTPS)
+  // Compatível com uso: req.io.to(room).emit(event, data)
+  req.io = {
+    // Socket.IO HTTP (sempre disponível)
+    http: io,
+    // Socket.IO HTTPS (disponível apenas se servidor HTTPS estiver ativo)
+    https: ioHttps,
+    // Método to() compatível com Socket.IO padrão - broadcast em ambos os servidores
+    to: (room) => {
+      return {
+        emit: (event, data) => {
+          // Emitir para HTTP (sempre disponível)
+          io.to(room).emit(event, data);
+          // Emitir para HTTPS se disponível
+          if (ioHttps) {
+            ioHttps.to(room).emit(event, data);
+          }
+        }
+      };
+    },
+    // Função helper para broadcast geral em ambos os servidores
+    emit: (event, data) => {
+      io.emit(event, data);
+      if (ioHttps) ioHttps.emit(event, data);
+    }
+  };
   next();
 });
 
@@ -176,9 +275,100 @@ io.on('connection', (socket) => {
 });
 
 
-// Inicia o servidor HTTP (NÃO MAIS app.listen)
-server.listen(port, async () => { // <--- MUDEI PARA server.listen
-  console.log(`Servidor rodando na porta ${port}`);
-  console.log(`Acesse: http://localhost:${port}`);
+// ============================================
+// Iniciar servidores HTTP e HTTPS
+// ============================================
+
+// Inicia o servidor HTTP (sempre disponível)
+httpServer.listen(port, async () => {
+  console.log('='.repeat(60));
+  console.log(`✅ Servidor HTTP rodando na porta ${port}`);
+  console.log(`   Acesse: http://localhost:${port}`);
+  console.log('='.repeat(60));
   await testConnection();
 });
+
+// Criar variável global 'io' compatível com código existente que usa 'io' diretamente
+// Permite broadcast em ambos os protocolos (HTTP e HTTPS)
+const globalIo = {
+  to: (room) => {
+    return {
+      emit: (event, data) => {
+        // Emitir para HTTP (sempre disponível)
+        io.to(room).emit(event, data);
+        // Emitir para HTTPS se disponível
+        if (ioHttps) {
+          ioHttps.to(room).emit(event, data);
+        }
+      }
+    };
+  },
+  emit: (event, data) => {
+    io.emit(event, data);
+    if (ioHttps) ioHttps.emit(event, data);
+  }
+};
+
+// Tornar disponível globalmente para código que usa 'io' diretamente
+global.io = globalIo;
+
+// Inicia o servidor HTTPS (apenas se certificados estiverem disponíveis)
+if (httpsServer) {
+  httpsServer.listen(httpsPort, async () => {
+    console.log('='.repeat(60));
+    console.log(`✅ Servidor HTTPS rodando na porta ${httpsPort}`);
+    console.log(`   Acesse: https://localhost:${httpsPort}`);
+    console.log(`   Ou via domínio: https://athospp.com.br:${httpsPort}`);
+    console.log('='.repeat(60));
+  });
+
+  // Compartilhar os mesmos eventos do Socket.IO para HTTPS
+  if (ioHttps) {
+    // Eventos do Socket.IO para HTTPS (idênticos ao HTTP)
+    ioHttps.on('connection', (socket) => {
+      console.log(`[HTTPS] Socket.IO: Cliente conectado: ${socket.id}`);
+
+      socket.on('disconnect', () => {
+        console.log(`[HTTPS] Socket.IO: Cliente desconectado: ${socket.id}`);
+      });
+
+      // Evento para entrar na sala da empresa
+      socket.on('join_company_room', (empresaId) => {
+        socket.join(`company_${empresaId}`);
+        console.log(`[HTTPS] Socket.IO: Cliente ${socket.id} entrou na sala da empresa ${empresaId}`);
+      });
+
+      // Evento para o cliente acompanhar um pedido específico
+      socket.on('join_pedido_room', ({ slug, pedidoId }) => {
+        if (slug && pedidoId) {
+          const roomName = `pedido_${slug}_${pedidoId}`;
+          socket.join(roomName);
+          console.log(`[HTTPS] Socket.IO: Cliente ${socket.id} entrou na sala do pedido ${roomName}`);
+        }
+      });
+
+      // Eventos Socket.IO - Rastreamento Público
+      socket.on('join_rastreamento_room', ({ slug, pedidoId }) => {
+        if (slug && pedidoId) {
+          const roomName = `rastreamento:${slug}:pedido:${pedidoId}`;
+          socket.join(roomName);
+          console.log(`[HTTPS] [Socket] Cliente ${socket.id} entrou na sala ${roomName}`);
+        } else {
+          console.warn(`[HTTPS] [Socket] join_rastreamento_room inválido - slug: ${slug}, pedidoId: ${pedidoId}`);
+        }
+      });
+
+      socket.on('leave_rastreamento_room', ({ slug, pedidoId }) => {
+        if (slug && pedidoId) {
+          const roomName = `rastreamento:${slug}:pedido:${pedidoId}`;
+          socket.leave(roomName);
+          console.log(`[HTTPS] [Socket] Cliente ${socket.id} saiu da sala ${roomName}`);
+        }
+      });
+    });
+  }
+} else {
+  console.log('ℹ️  Servidor HTTPS não foi iniciado (certificados não encontrados)');
+  console.log('ℹ️  O backend continuará funcionando normalmente em HTTP');
+  console.log('ℹ️  O Nginx continuará fazendo proxy HTTPS -> HTTP');
+}
