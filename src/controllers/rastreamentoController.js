@@ -57,7 +57,19 @@ const iniciarRastreamento = async (req, res, next) => {
   const io = req.io; // Instância do Socket.IO
 
   try {
-    // Buscar rastreamento
+    // 1. Verificar se o pedido existe
+    const [pedidoRows] = await pool.query(
+      'SELECT id, numero_pedido, status FROM pedidos WHERE id = ? AND empresa_id = ?',
+      [id, empresaId]
+    );
+
+    if (pedidoRows.length === 0) {
+      return res.status(404).json({ message: 'Pedido não encontrado' });
+    }
+
+    const pedido = pedidoRows[0];
+
+    // 2. Buscar rastreamento
     const [rastreamentoRows] = await pool.query(
       `SELECT r.*, p.numero_pedido, p.status as pedido_status
        FROM rastreamento_entrega r
@@ -66,11 +78,35 @@ const iniciarRastreamento = async (req, res, next) => {
       [id, empresaId]
     );
 
-    if (rastreamentoRows.length === 0) {
-      return res.status(404).json({ message: 'Rastreamento não encontrado para este pedido' });
-    }
+    let rastreamento;
+    let criadoAutomaticamente = false;
 
-    const rastreamento = rastreamentoRows[0];
+    // 3. Se rastreamento não existir, criar automaticamente
+    if (rastreamentoRows.length === 0) {
+      console.log(`⚠️ [Rastreamento ${empresaId}] Rastreamento não encontrado para pedido ${id} - criando automaticamente`);
+      
+      // Criar rastreamento automaticamente
+      const [result] = await pool.query(
+        'INSERT INTO rastreamento_entrega (pedido_id, empresa_id, status) VALUES (?, ?, ?)',
+        [id, empresaId, 'pendente']
+      );
+
+      // Buscar o rastreamento recém-criado
+      const [novoRastreamentoRows] = await pool.query(
+        `SELECT r.*, p.numero_pedido, p.status as pedido_status
+         FROM rastreamento_entrega r
+         JOIN pedidos p ON r.pedido_id = p.id
+         WHERE r.id = ?`,
+        [result.insertId]
+      );
+
+      rastreamento = novoRastreamentoRows[0];
+      criadoAutomaticamente = true;
+      
+      console.log(`✅ [Rastreamento ${empresaId}] Rastreamento criado automaticamente para pedido ${id} (rastreamento_id: ${rastreamento.id})`);
+    } else {
+      rastreamento = rastreamentoRows[0];
+    }
 
     if (rastreamento.status !== 'pendente') {
       return res.status(400).json({ message: `Rastreamento já está ${rastreamento.status}` });
@@ -126,7 +162,7 @@ const iniciarRastreamento = async (req, res, next) => {
     }
 
     // Buscar dados do pedido para enviar WhatsApp
-    const [pedidoRows] = await pool.query(
+    const [pedidoWhatsAppRows] = await pool.query(
       `SELECT p.id, p.numero_pedido, p.tipo_entrega, p.valor_total,
               p.nome_cliente_convidado, p.taxa_entrega, p.troco,
               p.endereco_entrega, p.complemento_entrega, p.numero_entrega,
@@ -137,9 +173,9 @@ const iniciarRastreamento = async (req, res, next) => {
       [id, empresaId]
     );
 
-    if (pedidoRows.length > 0) {
-      const pedido = pedidoRows[0];
-      const telefoneCliente = pedido.telefone_cliente;
+    if (pedidoWhatsAppRows.length > 0) {
+      const pedidoWhatsApp = pedidoWhatsAppRows[0];
+      const telefoneCliente = pedidoWhatsApp.telefone_cliente;
       
       // Enviar WhatsApp de "Saiu para Entrega" quando motoboy iniciar entrega
       if (telefoneCliente) {
@@ -150,12 +186,15 @@ const iniciarRastreamento = async (req, res, next) => {
     }
 
     res.status(200).json({
-      message: 'Rastreamento iniciado com sucesso',
+      message: criadoAutomaticamente 
+        ? 'Rastreamento criado e iniciado com sucesso' 
+        : 'Rastreamento iniciado com sucesso',
       rastreamento: {
         id: rastreamento.id,
         pedido_id: parseInt(id),
         status: 'em_entrega',
-        data_inicio: new Date()
+        data_inicio: new Date(),
+        criado_automaticamente: criadoAutomaticamente // Flag opcional para indicar que foi criado automaticamente
       }
     });
 
